@@ -70,7 +70,7 @@ Work as described in
 .IR bind (1),
 .IR bind (2)
 .SH SOURCE
-.B https://bitbucket.org/k-vik/unionfs
+.B git://code.kvik.link/unionfs
 .SH BUGS
 .PP
 You're.
