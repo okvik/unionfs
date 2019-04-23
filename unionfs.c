@@ -677,6 +677,15 @@ main(int argc, char *argv[])
 	case 'b':
 		mflag = MBEFORE;
 		break;
+	case 'c':
+		c++;
+		break;
+	case 'C':
+		mflag |= MCACHE;
+		break;
+	case 'D':
+		chatty9p++;
+		break;
 	case 'm':
 		mtpt = EARGF(usage());
 		break;
@@ -685,15 +694,6 @@ main(int argc, char *argv[])
 		break;
 	case 's':
 		srv = EARGF(usage());
-		break;
-	case 'D':
-		chatty9p++;
-		break;
-	case 'c':
-		c++;
-		break;
-	case 'C':
-		mflag |= MCACHE;
 		break;
 	default:
 		usage();
