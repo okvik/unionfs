@@ -446,13 +446,15 @@ filereaddir(Fil *p)
 void
 fsopen(Req *r)
 {
-	Fcall *i;
+	Fcall *i, *o;
 	Fstate *st;
 	Fil *f;
 	
 	i = &r->ifcall;
+	o = &r->ofcall;
 	st = r->fid->aux;
 	f = st->file;
+
 	if(f->mode&DMDIR){
 		st->dir = filereaddir(f);
 		st->idx = st->dir;
@@ -462,6 +464,7 @@ fsopen(Req *r)
 			responderror(r);
 			return;
 		}
+		o->iounit = iounit(st->fd);
 	}
 	respond(r, nil);
 }
