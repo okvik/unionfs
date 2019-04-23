@@ -680,6 +680,9 @@ main(int argc, char *argv[])
 	case 'm':
 		mtpt = EARGF(usage());
 		break;
+	case 'M':
+		mtpt = nil;
+		break;
 	case 's':
 		srv = EARGF(usage());
 		break;
