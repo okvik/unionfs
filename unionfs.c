@@ -671,14 +671,14 @@ main(int argc, char *argv[])
 
 	c = 0;
 	mflag = MREPL|MCREATE;
-	mtpt = "/n/un";
+	mtpt = nil;
 	srv = nil;
 	ARGBEGIN{
 	case 'a':
-		mflag = MAFTER;
+		mflag |= MAFTER;
 		break;
 	case 'b':
-		mflag = MBEFORE;
+		mflag |= MBEFORE;
 		break;
 	case 'c':
 		c++;
@@ -692,9 +692,6 @@ main(int argc, char *argv[])
 	case 'm':
 		mtpt = EARGF(usage());
 		break;
-	case 'M':
-		mtpt = nil;
-		break;
 	case 's':
 		srv = EARGF(usage());
 		break;
@@ -702,6 +699,8 @@ main(int argc, char *argv[])
 		usage();
 	}ARGEND;
 	if(argc < 1)
+		usage();
+	if(mtpt == nil && srv == nil)
 		usage();
 	for(i = 0; i < argc; i++){
 		if(strncmp(argv[i], "-c", 2) == 0){
