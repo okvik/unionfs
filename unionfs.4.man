@@ -54,7 +54,9 @@ Post channel on
 .BI -m \ mtpt
 Set mountpoint
 .RI ( /mnt/union
-by default.)
+by default,
+.I -M
+prevents it)
 .TP
 .B -a, -b, -C
 Work as described in
