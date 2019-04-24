@@ -3,12 +3,14 @@
 TARG=unionfs
 OFILES=$TARG.$O
 BIN=$home/bin/$objtype
-MAN=/sys/man/4
 
-</sys/src/cmd/mkone
+</sys/src/cmd/mk1
 
-install:V: $TARG.man
+install:V: sysinstall
+
+sysinstall:V:
+	cp unionfs.4.man /sys/man/4/unionfs
 
 uninstall:V:
 	rm -f $BIN/$TARG
-	rm -f $MAN/$TARG
+	rm -f /sys/man/4/$TARG
