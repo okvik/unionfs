@@ -5,17 +5,17 @@ unionfs \- union file server
 .B unionfs
 [
 .B -D
-]
-[
+] [
 .B -abC
-]
+] [
+.B -M
+|
 .B -m
 .I mtpt
-|
+] [
 .B -s
 .I srvname
-[
-[
+] [ [
 .B -c
 ]
 .I path ....
@@ -27,63 +27,42 @@ serves a file tree that represents a deep
 merge of the file trees given by one or
 more of the
 .I path
-arguments.
-.PP
-Unlike the namespace operators described in
+arguments - unlike the namespace
+operators described in
 .IR bind (2),
-which merge directory contents
-only on a single - mountpoint - level,
-.I unionfs
-does a deep merge. This means that
-if more than one file tree contains a
-directory of the same name at any
-point in the union tree, traversing that
-point will return the combined content
-of the overlapping directories - instead
-of only the first one in the union list.
+which merge directory contents on
+a single level.
 .PP
-An ordered list of
-.I path
-arguments must be given. This list
-influences the tree walking and other file
-operations in a similar fashion as the
-system-provided union lists.
 If the
 .I -c
-flag is prefixed to the path, that tree
-will be marked as the target for file
+flag is prefixed to a
+.I path
+it will be marked as a target for file
 creation; otherwise the first path in the
 list will be used. 
 .PP
-Either of the
-.I -m
-or
-.I -s
-options is required; the former specifies
-a mount point at which to mount the
-file server and the latter causes the
-server file descriptor to be posted to the
-.IR srv (3)
-device.
-.PP
-The options
-.I -a, -b
-and
-.I -C
-control the mounting of the file server at
-.I mtpt
-as described in
+The command line options are:
+.TF "-s srvname"
+.TP
+.B -D
+Enable 9P trace output.
+.TP
+.BI -s \ srvname
+Post channel on
+.RI /srv/ srvname .
+.TP
+.BI -m \ mtpt
+Set mountpoint
+.RI ( /mnt/union
+by default.)
+.TP
+.B -a, -b, -C
+Work as described in
 .IR bind (1).
-.PP
-The
-.I -D
-option causes
-.IR 9p (2)
-trace to be output to the standard error
-during runtime.
-.SS Examples
+.PD
+.SH EXAMPLES
 .EX
-unionfs -m /bin /rc/bin /arm/bin -c $home/bin/^(rc arm)
+% unionfs -m /bin /rc/bin /arm/bin -c $home/bin/^(rc arm)
 .EE
 .SH SEE ALSO
 .IR bind (1),
