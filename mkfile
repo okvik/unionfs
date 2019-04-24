@@ -4,7 +4,7 @@ TARG=unionfs
 OFILES=$TARG.$O
 BIN=$home/bin/$objtype
 
-</sys/src/cmd/mk1
+</sys/src/cmd/mkone
 
 install:V: sysinstall
 
