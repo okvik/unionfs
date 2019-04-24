@@ -160,8 +160,7 @@ qidnew(Dir *d)
 	uvlong path;
 	Qidmap *q;
 	
-	q = qidlookup(d);
-	if(q != nil)
+	if(q = qidlookup(d))
 		return (Qidmap*)copyref(q);
 	path = d->qid.path;
 	while(qidexists(path)){
@@ -187,8 +186,6 @@ qidfree(Qidmap *q)
 	int h;
 	Qidmap *l;
 	
-	if(q == nil)
-		return;
 	if(decref(q))
 		return;
 	h = qidhash(q->path);
@@ -232,8 +229,6 @@ filenew(Dir *d)
 void
 filefree(Fil *f)
 {
-	if(f == nil)
-		return;
 	if(decref(f))
 		return;
 //	qidfree(f->qmap);
@@ -292,10 +287,10 @@ fstatenew(Fil *f)
 void
 fstatefree(Fstate *st)
 {
-	if(st == nil)
-		return;
-	filefree(st->file);
-	flistfree(st->dir);
+	if(st->file)
+		filefree(st->file);
+	if(st->dir)
+		flistfree(st->dir);
 	close(st->fd);
 	free(st);
 }
@@ -341,16 +336,14 @@ filewalk(Fil *p, char *name)
 	Union *u;
 	
 	if(strcmp(name, "..") == 0){
-		s = strrchr(p->fspath, '/');
-		if(s == nil)
+		if((s = strrchr(p->fspath, '/')) == nil)
 			return p;
 		*s = 0;
-		return filewalk(p, "");
+		name = "";
 	}
 	for(u = unionlist->next; u != unionlist; u = u->next){
 		path = esmprint("%s/%s/%s", u->root, p->fspath, name);
-		d = dirstat(path);
-		if(d != nil){
+		if(d = dirstat(path)){
 			f = filenew(d);
 			free(d);
 			f->fspath = cleanname(esmprint("%s/%s", p->fspath, name));
@@ -367,11 +360,14 @@ walk1(Fid *fid, char *name, void *)
 {
 	Fil *p, *f;
 	Fstate *st;
+
+	/* not sure if needed */
+	if(!(fid->qid.type&QTDIR))
+		return "walk in non-directory";
 	
 	st = fid->aux;
 	p = st->file;
-	f = filewalk(p, name);
-	if(f == nil)
+	if((f = filewalk(p, name)) == nil)
 		return "no file";
 	st->file = f;
 	filefree(p);
@@ -393,7 +389,9 @@ clone(Fid *old, Fid *new, void*)
 void
 destroyfid(Fid *fid)
 {
-	fstatefree((Fstate*)fid->aux);
+	if(fid->aux)
+		fstatefree(fid->aux);
+	fid->aux = nil;
 }
 
 void
@@ -416,17 +414,14 @@ filereaddir(Fil *p)
 	list = nil;
 	for(u = unionlist->next; u != unionlist; u = u->next){
 		path = esmprint("%s/%s", u->root, p->fspath);
-		d = dirstat(path);
-		if(d == nil){
+		if((d = dirstat(path)) == nil){
+		err:
 			free(path);
 			continue;
 		}
 		free(d);
-		fd = open(path, OREAD);
-		if(fd < 0){
-			free(path);
-			continue;
-		}
+		if((fd = open(path, OREAD)) < 0)
+			goto err;
 		free(path);
 		n = dirreadall(fd, &dir);
 		close(fd);
@@ -681,7 +676,7 @@ main(int argc, char *argv[])
 		mflag |= MBEFORE;
 		break;
 	case 'c':
-		c++;
+		c = 1;
 		break;
 	case 'C':
 		mflag |= MCACHE;
