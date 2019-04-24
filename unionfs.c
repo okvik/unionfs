@@ -657,7 +657,7 @@ Srv fs = {
 void
 usage(void)
 {
-	fprint(2, "%s [-D] [-abC] -m mtpt | -s srv [[-c] path ...]\n", argv0);
+	fprint(2, "%s [-D] [-abC] [-M | -m mtpt] [-s srv] [[-c] path ...]\n", argv0);
 	exits("usage");
 }
 
@@ -671,7 +671,7 @@ main(int argc, char *argv[])
 
 	c = 0;
 	mflag = MREPL|MCREATE;
-	mtpt = nil;
+	mtpt = "/mnt/union";
 	srv = nil;
 	ARGBEGIN{
 	case 'a':
@@ -692,6 +692,9 @@ main(int argc, char *argv[])
 	case 'm':
 		mtpt = EARGF(usage());
 		break;
+	case 'M':
+		mtpt = nil;
+		break;
 	case 's':
 		srv = EARGF(usage());
 		break;
@@ -699,8 +702,6 @@ main(int argc, char *argv[])
 		usage();
 	}ARGEND;
 	if(argc < 1)
-		usage();
-	if(mtpt == nil && srv == nil)
 		usage();
 	for(i = 0; i < argc; i++){
 		if(strncmp(argv[i], "-c", 2) == 0){
