@@ -94,17 +94,19 @@ estrdup(char *s)
 }
 
 char*
-esmprint(char *fmt, ...)
+mkpath(char *a0, ...)
 {
-	char *s;
-	va_list arg;
-	
-	va_start(arg, fmt);
-	s = vsmprint(fmt, arg);
-	va_end(arg);
-	if(s == nil)
-		sysfatal("esmprint: %r");
-	return s;
+	va_list args;
+	int i;
+	char *a;
+	char *ap[] = {a0, "", ""};
+
+	va_start(args, a0);
+	for(i = 1; (a = va_arg(args, char*)) != nil && i < 3; i++)
+		ap[i] = a;
+	va_end(args);
+
+	return cleanname(smprint("%s/%s/%s", ap[0], ap[1], ap[2]));
 }
 
 Ref*
@@ -342,12 +344,12 @@ filewalk(Fil *p, char *name)
 		name = "";
 	}
 	for(u = unionlist->next; u != unionlist; u = u->next){
-		path = esmprint("%s/%s/%s", u->root, p->fspath, name);
+		path = mkpath(u->root, p->fspath, name, nil);
 		if(d = dirstat(path)){
 			f = filenew(d);
 			free(d);
-			f->fspath = cleanname(esmprint("%s/%s", p->fspath, name));
-			f->path = cleanname(path);
+			f->fspath = mkpath(p->fspath, name, nil);
+			f->path = path;
 			return f;
 		}
 		free(path);
@@ -413,7 +415,7 @@ filereaddir(Fil *p)
 
 	list = nil;
 	for(u = unionlist->next; u != unionlist; u = u->next){
-		path = esmprint("%s/%s", u->root, p->fspath);
+		path = mkpath(u->root, p->fspath, nil);
 		if((d = dirstat(path)) == nil){
 		err:
 			free(path);
@@ -483,7 +485,7 @@ fscreate(Req *r)
 		if(u->create == 1)
 			break;
 	assert(u != unionlist);
-	path = cleanname(esmprint("%s/%s", u->root, f->fspath));
+	path = mkpath(u->root, f->fspath, nil);
 	d = dirstat(path);
 	if(d != nil)
 		goto work;
@@ -491,7 +493,7 @@ fscreate(Req *r)
 		if(u->create == 1)
 			continue;
 		free(path);
-		path = cleanname(esmprint("%s/%s", u->root, f->fspath));
+		path = mkpath(u->root, f->fspath, nil);
 		d = dirstat(path);
 		if(d != nil){
 			free(d);
@@ -501,7 +503,7 @@ fscreate(Req *r)
 	sysfatal("something's fucked");
 	
 work:
-	npath = cleanname(esmprint("%s/%s", path, i->name));
+	npath = mkpath(path, i->name, nil);
 	free(path);
 	st = emalloc(sizeof(*st));
 	st->fd = create(npath, i->mode, i->perm);
@@ -705,7 +707,7 @@ main(int argc, char *argv[])
 		}
 		u = emalloc(sizeof(*u));
 		u->create = c == 1 ? c : 0;
-		u->root = estrdup(cleanname(argv[i]));
+		u->root = mkpath(argv[i], nil);
 		unionlink(unionlist, u);
 	}
 	if(c == 0)
