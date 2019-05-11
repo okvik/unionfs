@@ -105,8 +105,10 @@ mkpath(char *a0, ...)
 	for(i = 1; (a = va_arg(args, char*)) != nil && i < 3; i++)
 		ap[i] = a;
 	va_end(args);
+	if((a = smprint("%s/%s/%s", ap[0], ap[1], ap[2])) == nil)
+		sysfatal("smprint: %r");
 
-	return cleanname(smprint("%s/%s/%s", ap[0], ap[1], ap[2]));
+	return cleanname(a);
 }
 
 Ref*
