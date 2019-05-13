@@ -489,8 +489,10 @@ fscreate(Req *r)
 	assert(u != unionlist);
 	path = mkpath(u->root, f->fspath, nil);
 	d = dirstat(path);
-	if(d != nil)
+	if(d != nil){
+		free(d);
 		goto work;
+	}
 	for(u = unionlist->next; u != unionlist; u = u->next){
 		if(u->create == 1)
 			continue;
