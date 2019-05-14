@@ -458,8 +458,7 @@ fsopen(Req *r)
 		st->dir = filereaddir(f);
 		st->idx = st->dir;
 	}else{
-		st->fd = open(f->path, i->mode);
-		if(st->fd < 0){
+		if((st->fd = open(f->path, i->mode)) < 0)
 			responderror(r);
 			return;
 		}
@@ -527,13 +526,11 @@ fscreate(Req *r)
 	npath = mkpath(path, i->name, nil);
 	free(path);
 	st = emalloc(sizeof(*st));
-	st->fd = create(npath, i->mode, i->perm);
-	if(st->fd < 0){
+	if((st->fd = create(npath, i->mode, i->perm)) < 0)
 		responderror(r);
 		return;
 	}
-	d = dirfstat(st->fd);
-	if(d == nil){
+	if((d = dirfstat(st->fd)) == nil)
 		fstatefree(st);
 		responderror(r);
 		return;
