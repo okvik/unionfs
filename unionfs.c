@@ -54,21 +54,6 @@ Union *unionlist = &u0;
 uvlong qidnext;
 Qidmap *qidmap[Nqidmap];
 
-void
-LOG(char *fmt, ...)
-{
-	static int fd = -1;
-	va_list args;
-
-	if(fd < 0 && (fd = open("/mnt/log/log", OWRITE)) < 0){
-		fprint(2, "failed to open log pipe\n");
-		return;
-	}
-	va_start(args, fmt);
-	vfprint(fd, fmt, args);
-	va_end(args);
-}
-
 void*
 emalloc(ulong sz)
 {
