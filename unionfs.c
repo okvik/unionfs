@@ -511,11 +511,11 @@ fscreate(Req *r)
 	npath = mkpath(path, i->name, nil);
 	free(path);
 	st = emalloc(sizeof(*st));
-	if((st->fd = create(npath, i->mode, i->perm)) < 0)
+	if((st->fd = create(npath, i->mode, i->perm)) < 0){
 		responderror(r);
 		return;
 	}
-	if((d = dirfstat(st->fd)) == nil)
+	if((d = dirfstat(st->fd)) == nil){
 		fstatefree(st);
 		responderror(r);
 		return;
