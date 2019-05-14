@@ -468,6 +468,39 @@ fsopen(Req *r)
 	respond(r, nil);
 }
 
+int
+mkdirp(char *path)
+{
+	int fd;
+	char *p;
+	Dir *d;
+	
+	assert(path != nil);
+	if((d = dirstat(path)) != nil){
+		free(d);
+		return 1;
+	}
+	path = p = strdup(path);
+	for(; p != nil ;){
+		if(p[0] == '/')
+			p++;
+		if(p = strchr(p, '/'))
+			*p = 0;
+		if((d = dirstat(path)) == nil){
+			if((fd = create(path, 0, 0777|DMDIR)) < 0){
+				free(path);
+				return -1;
+			}
+			close(fd);
+		}
+		free(d);
+		if(p != nil)
+			*p++ = '/';
+	}
+	free(path);
+	return 1;
+}
+
 void
 fscreate(Req *r)
 {
@@ -486,27 +519,11 @@ fscreate(Req *r)
 	for(u = unionlist->next; u != unionlist; u = u->next)
 		if(u->create == 1)
 			break;
-	assert(u != unionlist);
 	path = mkpath(u->root, f->fspath, nil);
-	d = dirstat(path);
-	if(d != nil){
-		free(d);
-		goto work;
+	if(mkdirp(path) < 0){
+		responderror(r);
+		return;
 	}
-	for(u = unionlist->next; u != unionlist; u = u->next){
-		if(u->create == 1)
-			continue;
-		free(path);
-		path = mkpath(u->root, f->fspath, nil);
-		d = dirstat(path);
-		if(d != nil){
-			free(d);
-			goto work;
-		}
-	}
-	sysfatal("something's fucked");
-	
-work:
 	npath = mkpath(path, i->name, nil);
 	free(path);
 	st = emalloc(sizeof(*st));
