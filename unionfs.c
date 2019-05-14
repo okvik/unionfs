@@ -443,7 +443,7 @@ fsopen(Req *r)
 		st->dir = filereaddir(f);
 		st->idx = st->dir;
 	}else{
-		if((st->fd = open(f->path, i->mode)) < 0)
+		if((st->fd = open(f->path, i->mode)) < 0){
 			responderror(r);
 			return;
 		}
