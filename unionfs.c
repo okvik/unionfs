@@ -338,15 +338,16 @@ filewalk(Fil *p, char *name)
 	}
 	for(u = unionlist->next; u != unionlist; u = u->next){
 		path = mkpath(u->root, np, nil);
-		if(d = dirstat(path)){
-			f = filenew(d);
-			free(d);
-			f->fspath = np;
-			f->path = path;
-			filefree(p);
-			return f;
+		if((d = dirstat(path)) == nil){
+			free(path);
+			continue;
 		}
-		free(path);
+		f = filenew(d);
+		free(d);
+		f->fspath = np;
+		f->path = path;
+		filefree(p);
+		return f;
 	}
 	free(np);
 	return nil;
