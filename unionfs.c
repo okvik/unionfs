@@ -325,36 +325,30 @@ fsattach(Req *r)
 Fil*
 filewalk(Fil *p, char *name)
 {
-	char *path;
-	char *s, *q;
+	char *path, *np;
 	Dir *d;
 	Fil *f;
 	Union *u;
 	
-	q = estrdup(p->fspath);
-	if(strcmp(name, "..") == 0){
-		if((s = strrchr(q, '/')) == nil){
-			free(q);
-			filefree(p);
-			return root;
-		}
-		*s = 0;
-		name = "";
+	np = mkpath(p->fspath, name, nil);
+	if(strcmp(np, ".") == 0){
+		free(np);
+		filefree(p);
+		return root;
 	}
 	for(u = unionlist->next; u != unionlist; u = u->next){
-		path = mkpath(u->root, q, name, nil);
+		path = mkpath(u->root, np, nil);
 		if(d = dirstat(path)){
 			f = filenew(d);
 			free(d);
-			f->fspath = mkpath(q, name, nil);
+			f->fspath = np;
 			f->path = path;
 			filefree(p);
-			free(q);
 			return f;
 		}
 		free(path);
 	}
-	free(q);
+	free(np);
 	return nil;
 }
 
