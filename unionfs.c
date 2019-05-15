@@ -337,6 +337,7 @@ filewalk(Fil *p, char *name)
 			free(d);
 			f->fspath = mkpath(p->fspath, name, nil);
 			f->path = path;
+			filefree(p);
 			return f;
 		}
 		free(path);
@@ -359,7 +360,6 @@ walk1(Fid *fid, char *name, void *)
 	if((f = filewalk(p, name)) == nil)
 		return "no file";
 	st->file = f;
-	filefree(p);
 
 	fid->qid = f->qid;
 	return nil;
