@@ -53,6 +53,7 @@ Union u0 = {.next = &u0, .prev = &u0};
 Union *unionlist = &u0;
 uvlong qidnext;
 Qidmap *qidmap[Nqidmap];
+Fil *root;
 
 void*
 emalloc(ulong sz)
@@ -218,6 +219,8 @@ filenew(Dir *d)
 void
 filefree(Fil *f)
 {
+	if(f == root)
+		return;
 	if(decref(f))
 		return;
 //	qidfree(f->qmap);
@@ -285,19 +288,19 @@ fstatefree(Fstate *st)
 }
 
 void
-fsattach(Req *r)
+initroot(void)
 {
+	char *user;
 	Dir d;
-	Fil *root;
-	Fstate *st;
 	
 	nulldir(&d);
 	d.qid = (Qid){0, 0, QTDIR};
 	d.name = ".";
 	d.mode = 0777|DMDIR;
-	d.uid = r->fid->uid;
-	d.gid = r->fid->uid;
-	d.muid = r->fid->uid;
+	user = getuser();
+	d.uid = user;
+	d.gid = user;
+	d.muid = user;
 	d.mtime = time(0);
 	d.atime = time(0);
 	d.length = 0;
@@ -305,10 +308,14 @@ fsattach(Req *r)
 	root = filenew(&d);
 	root->fspath = estrdup(d.name);
 	root->path = estrdup(d.name);
+}
+
+void
+fsattach(Req *r)
+{
+	Fstate *st;
 	
 	st = fstatenew(root);
-	decref(root);
-
 	r->fid->aux = st;
 	r->fid->qid = root->qid;
 	r->ofcall.qid = root->qid;
@@ -326,7 +333,7 @@ filewalk(Fil *p, char *name)
 	
 	if(strcmp(name, "..") == 0){
 		if((s = strrchr(p->fspath, '/')) == nil)
-			return p;
+			return root;
 		*s = 0;
 		name = "";
 	}
@@ -716,6 +723,7 @@ main(int argc, char *argv[])
 	if(c == 0)
 		unionlist->next->create = 1;
 	
+	initroot();
 	postmountsrv(&fs, srv, mtpt, mflag);
 	
 	exits(nil);
