@@ -527,8 +527,8 @@ fscreate(Req *r)
 	st->file = nf;
 	
 	r->fid->aux = st;
-	r->fid->qid = f->qid;
-	o->qid = f->qid;
+	r->fid->qid = nf->qid;
+	o->qid = nf->qid;
 	respond(r, nil);
 }
 
