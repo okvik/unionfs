@@ -326,29 +326,35 @@ Fil*
 filewalk(Fil *p, char *name)
 {
 	char *path;
-	char *s;
+	char *s, *q;
 	Dir *d;
 	Fil *f;
 	Union *u;
 	
+	q = estrdup(p->fspath);
 	if(strcmp(name, "..") == 0){
-		if((s = strrchr(p->fspath, '/')) == nil)
+		if((s = strrchr(q, '/')) == nil){
+			free(q);
+			filefree(p);
 			return root;
+		}
 		*s = 0;
 		name = "";
 	}
 	for(u = unionlist->next; u != unionlist; u = u->next){
-		path = mkpath(u->root, p->fspath, name, nil);
+		path = mkpath(u->root, q, name, nil);
 		if(d = dirstat(path)){
 			f = filenew(d);
 			free(d);
-			f->fspath = mkpath(p->fspath, name, nil);
+			f->fspath = mkpath(q, name, nil);
 			f->path = path;
 			filefree(p);
+			free(q);
 			return f;
 		}
 		free(path);
 	}
+	free(q);
 	return nil;
 }
 
