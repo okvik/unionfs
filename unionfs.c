@@ -483,17 +483,18 @@ filereaddir(Fil *p)
 		if((fd = open(path, OREAD)) < 0)
 			goto err;
 		free(path);
-		n = dirreadall(fd, &dir);
-		close(fd);
-		if(n < 0)
-			continue;
-		for(i = 0; i < n; i++){
-			if(u->prev != unionlist && fthas(ft, dir[i].name))
-				continue;
-			f = filenew(&dir[i]);
-			ftadd(ft, f);
+		while((n = dirread(fd, &dir)) > 0){
+			for(i = 0; i < n; i++){
+				if(u->prev != unionlist && fthas(ft, dir[i].name))
+					continue;
+				f = filenew(&dir[i]);
+				ftadd(ft, f);
+			}
+			free(dir);
 		}
-		free(dir);
+		if(n < 0)
+			fprint(2, "dirread: %r\n");
+		close(fd);
 	}
 	return ft;
 }
