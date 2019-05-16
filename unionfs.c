@@ -488,14 +488,13 @@ filereaddir(Fil *p)
 		if(n < 0)
 			continue;
 		for(i = 0; i < n; i++){
-			if(fthas(ft, dir[i].name))
+			if(u->prev != unionlist && fthas(ft, dir[i].name))
 				continue;
 			f = filenew(&dir[i]);
 			ftadd(ft, f);
 		}
 		free(dir);
 	}
-//	ftprint(ft);
 	return ft;
 }
 
