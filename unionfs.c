@@ -6,7 +6,7 @@
 
 typedef struct Union Union;
 typedef struct Fil Fil;
-typedef struct List List;
+typedef struct Ftab Ftab;
 typedef struct Fstate Fstate;
 typedef struct Qidmap Qidmap;
 
@@ -19,6 +19,8 @@ struct Union {
 enum {
 	Nqidbits = 5,
 	Nqidmap = 1 << Nqidbits,
+	Nftab = 32,
+	Nftlist = 32,
 };
 
 struct Qidmap {
@@ -38,7 +40,7 @@ struct Fil {
 	char *fspath;	/* internal path */
 };
 
-struct List {
+struct Ftab {
 	long n, sz;
 	Fil **l;
 };
@@ -46,7 +48,7 @@ struct List {
 struct Fstate {
 	int fd;
 	Fil *file;
-	List *flist;
+	Ftab *ftab;
 };
 
 Union u0 = {.next = &u0, .prev = &u0};
@@ -242,50 +244,88 @@ filefree(Fil *f)
 	free(f);
 }
 
-List*
-lnew(void)
+uint
+fthash(char *s)
 {
-	List *l;
-	
-	l = emalloc(sizeof *l);
-	l->n = 0;
-	l->sz = 256;
-	l->l = emalloc(l->sz*sizeof(*l->l));
+	uint h;
+	for(h = 0; *s; s++)
+		h = *s + 31*h;
+	return h % Nftab;
+}
 
-	return l;
+Ftab*
+ftnew(void)
+{
+	int i;
+	Ftab *ft, *p;
+	
+	ft = emalloc(Nftab*sizeof(Ftab));
+	for(i = 0; i < Nftab; i++){
+		p = &ft[i];
+		p->sz = Nftlist;
+		p->l = emalloc(p->sz*sizeof(*p->l));
+	}
+	return ft;
 }
 
 void
-lfree(List *l)
+ftfree(Ftab *ft)
 {
-	int i;
+	int i, j;
+	Ftab *p;
 	
-	for(i = 0; i < l->n; i++)
-		filefree(l->l[i]);
-	free(l);
-}
-
-int
-ladd(List *l, Fil *f)
-{
-	if(l->n == l->sz){
-		l->sz *= 2;
-		l->l = erealloc(l->l, l->sz*sizeof(*l->l));
+	for(i = 0; i < Nftab; i++){
+		p = &ft[i];
+		for(j = 0; j < p->n; j++)
+			filefree(p->l[j]);
+		free(p->l);
 	}
-	l->l[l->n++] = f;
+	free(ft);
+}
 
-	return l->n;
+void
+ftadd(Ftab *ft, Fil *f)
+{
+	Ftab *p;
+	
+	p = &ft[fthash(f->name)];
+	if(p->n == p->sz){
+		p->sz *= 2;
+		p->l = erealloc(p->l, p->sz*sizeof(*p->l));
+	}
+	p->l[p->n++] = f;
 }
 
 int
-lhas(List *l, char *name)
+fthas(Ftab *ft, char *name)
 {
 	int i;
+	Ftab *p;
 	
-	for(i = 0; i < l->n; i++)
-		if(strcmp(l->l[i]->name, name) == 0)
+	p = &ft[fthash(name)];
+	for(i = 0; i < p->n; i++)
+		if(strcmp(p->l[i]->name, name) == 0)
 			return 1;
 	return 0;
+}
+
+Fil*
+ftidx(Ftab *ft, long i)
+{
+	long y;
+	Ftab *p;
+	
+	for(y = 0; y < Nftab; y++){
+		p = &ft[y];
+		if(p->n == 0)
+			continue;
+		if(i >= p->n){
+			i -= p->n;
+			continue;
+		}
+		return p->l[i];
+	}
+	return nil;
 }
 
 Fstate*
@@ -304,8 +344,8 @@ fstatefree(Fstate *st)
 {
 	if(st->file)
 		filefree(st->file);
-	if(st->flist)
-		lfree(st->flist);
+	if(st->ftab)
+		ftfree(st->ftab);
 	close(st->fd);
 	free(st);
 }
@@ -420,7 +460,7 @@ fswalk(Req *r)
 	walkandclone(r, walk1, clone, nil);
 }
 
-List*
+Ftab*
 filereaddir(Fil *p)
 {
 	int fd;
@@ -429,9 +469,9 @@ filereaddir(Fil *p)
 	char *path;
 	Union *u;
 	Fil *f;
-	List *list;
+	Ftab *ft;
 
-	list = lnew();
+	ft = ftnew();
 	for(u = unionlist->next; u != unionlist; u = u->next){
 		path = mkpath(u->root, p->fspath, nil);
 		if((d = dirstat(path)) == nil){
@@ -448,14 +488,15 @@ filereaddir(Fil *p)
 		if(n < 0)
 			continue;
 		for(i = 0; i < n; i++){
-			if(lhas(list, dir[i].name))
+			if(fthas(ft, dir[i].name))
 				continue;
 			f = filenew(&dir[i]);
-			ladd(list, f);
+			ftadd(ft, f);
 		}
 		free(dir);
 	}
-	return list;
+//	ftprint(ft);
+	return ft;
 }
 
 void
@@ -471,7 +512,7 @@ fsopen(Req *r)
 	f = st->file;
 
 	if(f->mode&DMDIR)
-		st->flist = filereaddir(f);
+		st->ftab = filereaddir(f);
 	else{
 		if((st->fd = open(f->path, i->mode)) < 0){
 			responderror(r);
@@ -592,13 +633,13 @@ int
 dirgen(int i, Dir *dir, void *aux)
 {
 	Fstate *fs;
-	List *l;
+	Fil *f;
 	
 	fs = aux;
-	l = fs->flist;
-	if(i == l->n)
+	f = ftidx(fs->ftab, i);
+	if(f == nil)
 		return -1;
-	dirfill(dir, l->l[i]);
+	dirfill(dir, f);
 	return 0;
 }
 
