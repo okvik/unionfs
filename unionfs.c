@@ -6,7 +6,7 @@
 
 typedef struct Union Union;
 typedef struct Fil Fil;
-typedef struct Flist Flist;
+typedef struct List List;
 typedef struct Fstate Fstate;
 typedef struct Qidmap Qidmap;
 
@@ -38,15 +38,15 @@ struct Fil {
 	char *fspath;	/* internal path */
 };
 
-struct Flist {
-	Fil *file;
-	Flist *next;
+struct List {
+	long n, sz;
+	Fil **l;
 };
 
 struct Fstate {
 	int fd;
 	Fil *file;
-	Flist *dir, *idx;
+	List *flist;
 };
 
 Union u0 = {.next = &u0, .prev = &u0};
@@ -63,8 +63,17 @@ emalloc(ulong sz)
 	if((v = malloc(sz)) == nil)
 		sysfatal("emalloc: %r");
 	memset(v, 0, sz);
-
 	setmalloctag(v, getcallerpc(&sz));
+	
+	return v;
+}
+
+void*
+erealloc(void *v, ulong sz)
+{
+	if((v = realloc(v, sz)) == nil && sz != 0)
+		sysfatal("realloc: %r");
+	setrealloctag(v, getcallerpc(&v));
 	return v;
 }
 
@@ -233,34 +242,47 @@ filefree(Fil *f)
 	free(f);
 }
 
-void
-flistadd(Flist **list, Fil *f)
+List*
+lnew(void)
 {
-	Flist *p;
+	List *l;
 	
-	p = emalloc(sizeof(*p));
-	p->file = f;
-	p->next = *list;
-	*list = p;
+	l = emalloc(sizeof *l);
+	l->n = 0;
+	l->sz = 256;
+	l->l = emalloc(l->sz*sizeof(*l->l));
+
+	return l;
 }
 
 void
-flistfree(Flist *l)
+lfree(List *l)
 {
-	Flist *lp;
+	int i;
 	
-	for(lp = l; lp != nil; l = lp){
-		lp = lp->next;
-		filefree(l->file);
-		free(l);
-	}
+	for(i = 0; i < l->n; i++)
+		filefree(l->l[i]);
 }
 
 int
-flisthas(Flist *list, char *name)
+ladd(List *l, Fil *f)
 {
-	for(; list != nil; list = list->next)
-		if(strcmp(list->file->name, name) == 0)
+	if(l->n == l->sz){
+		l->sz *= 2;
+		l->l = erealloc(l->l, l->sz*sizeof(*l->l));
+	}
+	l->l[l->n++] = f;
+
+	return l->n;
+}
+
+int
+lhas(List *l, char *name)
+{
+	int i;
+	
+	for(i = 0; i < l->n; i++)
+		if(strcmp(l->l[i]->name, name) == 0)
 			return 1;
 	return 0;
 }
@@ -281,8 +303,8 @@ fstatefree(Fstate *st)
 {
 	if(st->file)
 		filefree(st->file);
-	if(st->dir)
-		flistfree(st->dir);
+	if(st->flist)
+		lfree(st->flist);
 	close(st->fd);
 	free(st);
 }
@@ -397,7 +419,7 @@ fswalk(Req *r)
 	walkandclone(r, walk1, clone, nil);
 }
 
-Flist*
+List*
 filereaddir(Fil *p)
 {
 	int fd;
@@ -406,9 +428,9 @@ filereaddir(Fil *p)
 	char *path;
 	Union *u;
 	Fil *f;
-	Flist *list;
+	List *list;
 
-	list = nil;
+	list = lnew();
 	for(u = unionlist->next; u != unionlist; u = u->next){
 		path = mkpath(u->root, p->fspath, nil);
 		if((d = dirstat(path)) == nil){
@@ -425,10 +447,10 @@ filereaddir(Fil *p)
 		if(n < 0)
 			continue;
 		for(i = 0; i < n; i++){
-			if(flisthas(list, dir[i].name))
+			if(lhas(list, dir[i].name))
 				continue;
 			f = filenew(&dir[i]);
-			flistadd(&list, f);
+			ladd(list, f);
 		}
 		free(dir);
 	}
@@ -447,10 +469,9 @@ fsopen(Req *r)
 	st = r->fid->aux;
 	f = st->file;
 
-	if(f->mode&DMDIR){
-		st->dir = filereaddir(f);
-		st->idx = st->dir;
-	}else{
+	if(f->mode&DMDIR)
+		st->flist = filereaddir(f);
+	else{
 		if((st->fd = open(f->path, i->mode)) < 0){
 			responderror(r);
 			return;
@@ -567,17 +588,16 @@ dirfill(Dir *dir, Fil *f)
 }
 
 int
-dirgen(int, Dir *dir, void *aux)
+dirgen(int i, Dir *dir, void *aux)
 {
 	Fstate *fs;
-	Flist *l;
+	List *l;
 	
 	fs = aux;
-	l = fs->idx;
-	if(l == nil)
+	l = fs->flist;
+	if(i == l->n)
 		return -1;
-	dirfill(dir, l->file);
-	fs->idx = l->next;
+	dirfill(dir, l->l[i]);
 	return 0;
 }
 
