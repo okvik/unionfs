@@ -262,6 +262,7 @@ lfree(List *l)
 	
 	for(i = 0; i < l->n; i++)
 		filefree(l->l[i]);
+	free(l);
 }
 
 int
