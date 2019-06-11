@@ -8,7 +8,7 @@ typedef struct Union Union;
 typedef struct Fil Fil;
 typedef struct Ftab Ftab;
 typedef struct Fstate Fstate;
-typedef struct Qidmap Qidmap;
+typedef struct Qtab Qtab;
 
 struct Union {
 	char *root;
@@ -17,25 +17,25 @@ struct Union {
 };
 
 enum {
-	Nqidbits = 5,
-	Nqidmap = 1 << Nqidbits,
+	Nqbit = 5,
+	Nqtab = 1<<Nqbit,
 	Nftab = 32,
 	Nftlist = 32,
 };
 
-struct Qidmap {
+struct Qtab {
 	Ref;
 	ushort type;
 	uint dev;
 	uvlong path;
 	uvlong qpath;
-	Qidmap *next;
+	Qtab *next;
 };
 
 struct Fil {
 	Ref;
 	Dir;
-	Qidmap *qmap;
+	Qtab *qtab;
 	char *path;	/* real path */
 	char *fspath;	/* internal path */
 };
@@ -54,7 +54,7 @@ struct Fstate {
 Union u0 = {.next = &u0, .prev = &u0};
 Union *unionlist = &u0;
 uvlong qidnext;
-Qidmap *qidmap[Nqidmap];
+Qtab *qidtab[Nqtab];
 Fil *root;
 
 void*
@@ -116,55 +116,55 @@ copyref(Ref *r)
 }
 
 int
-qidhash(uvlong path)
+qthash(uvlong path)
 {
 	int h, n;
 	
 	h = 0;
-	for(n = 0; n < 64; n += Nqidbits){
+	for(n = 0; n < 64; n += Nqbit){
 		h ^= path;
-		path >>= Nqidbits;
+		path >>= Nqbit;
 	}
-	return h & (Nqidmap-1);
+	return h & (Nqtab-1);
 }
 
-Qidmap*
-qidlookup(Dir *d)
+Qtab*
+qtget(Dir *d)
 {
 	int h;
-	Qidmap *q;
+	Qtab *q;
 	
-	h = qidhash(d->qid.path);
-	for(q = qidmap[h]; q != nil; q = q->next)
+	h = qthash(d->qid.path);
+	for(q = qidtab[h]; q != nil; q = q->next)
 		if(q->type == d->type && q->dev == d->dev && q->path == d->qid.path)
 			return q;
 	return nil;
 }
 
 int
-qidexists(uvlong path)
+qthas(uvlong path)
 {
 	int h;
-	Qidmap *q;
+	Qtab *q;
 	
-	for(h = 0; h < Nqidmap; h++)
-		for(q = qidmap[h]; q != nil; q = q->next)
+	for(h = 0; h < Nqtab; h++)
+		for(q = qidtab[h]; q != nil; q = q->next)
 			if(q->qpath == path)
 				return 1;
 	return 0;
 }
 
-Qidmap*
-qidnew(Dir *d)
+Qtab*
+qtadd(Dir *d)
 {
 	int h;
 	uvlong path;
-	Qidmap *q;
+	Qtab *q;
 	
-	if(q = qidlookup(d))
-		return (Qidmap*)copyref(q);
+	if(q = qtget(d))
+		return (Qtab*)copyref(q);
 	path = d->qid.path;
-	while(qidexists(path)){
+	while(qthas(path)){
 		path &= (1LL<<48)-1;
 		if(++qidnext >= 1<<16)
 			qidnext = 1;
@@ -175,25 +175,25 @@ qidnew(Dir *d)
 	q->dev = d->dev;
 	q->path = d->qid.path;
 	q->qpath = path;
-	h = qidhash(q->path);
-	q->next = qidmap[h];
-	qidmap[h] = q;
-	return (Qidmap*)copyref(q);
+	h = qthash(q->path);
+	q->next = qidtab[h];
+	qidtab[h] = q;
+	return (Qtab*)copyref(q);
 }
 
 void
-qidfree(Qidmap *q)
+qtfree(Qtab *q)
 {
 	int h;
-	Qidmap *l;
+	Qtab *l;
 	
 	if(decref(q))
 		return;
-	h = qidhash(q->path);
-	if(qidmap[h] == q)
-		qidmap[h] = q->next;
+	h = qthash(q->path);
+	if(qidtab[h] == q)
+		qidtab[h] = q->next;
 	else{
-		for(l = qidmap[h]; l->next != q; l = l->next)
+		for(l = qidtab[h]; l->next != q; l = l->next)
 			;
 		l->next = q->next;
 	}
@@ -217,9 +217,9 @@ filenew(Dir *d)
 	
 	f = emalloc(sizeof(*f));
 	f->ref = 1;
-	f->qmap = qidnew(d);
+	f->qtab = qtadd(d);
 	f->Dir = *d;
-	f->qid.path = f->qmap->qpath;
+	f->qid.path = f->qtab->qpath;
 	f->name = estrdup(d->name);
 	f->uid = estrdup(d->uid);
 	f->gid = estrdup(d->gid);
@@ -234,7 +234,7 @@ filefree(Fil *f)
 		return;
 	if(decref(f))
 		return;
-//	qidfree(f->qmap);
+//	qtfree(f->qtab);
 	free(f->name);
 	free(f->uid);
 	free(f->gid);
