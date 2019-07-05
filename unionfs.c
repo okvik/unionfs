@@ -737,6 +737,7 @@ main(int argc, char *argv[])
 	int c, i;
 	int mflag;
 	char *mtpt, *srv;
+	Dir *d;
 	Union *u;
 
 	c = 0;
@@ -778,11 +779,22 @@ main(int argc, char *argv[])
 			c++;
 			continue;
 		}
+		if(strcmp(argv[i], mtpt) == 0){
+			fprint(2, "%s: mountpoint cycle, skipping branch %s\n", argv0, argv[i]);
+			continue;
+		}
+		if((d = dirstat(argv[i])) == nil){
+			fprint(2, "%s: %s does not exist, skipping\n", argv0, argv[i]);
+			continue;
+		}
+		free(d);
 		u = emalloc(sizeof(*u));
 		u->create = c == 1 ? c : 0;
 		u->root = mkpath(argv[i], nil);
 		unionlink(unionlist, u);
 	}
+	if(unionlist->next == unionlist->prev)
+		sysfatal("empty branch list");
 	if(c == 0)
 		unionlist->next->create = 1;
 	
