@@ -793,7 +793,7 @@ main(int argc, char *argv[])
 		u->root = mkpath(argv[i], nil);
 		unionlink(unionlist, u);
 	}
-	if(unionlist->next == unionlist->prev)
+	if(unionlist->next == &u0)
 		sysfatal("empty branch list");
 	if(c == 0)
 		unionlist->next->create = 1;
