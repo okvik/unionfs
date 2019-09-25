@@ -70,7 +70,7 @@ Work as described in
 .IR bind (1),
 .IR bind (2)
 .SH SOURCE
-.B git://code.kvik.link/unionfs
+.B git://code.a-b.xyz/unionfs
 .SH BUGS
 .PP
 You're.
