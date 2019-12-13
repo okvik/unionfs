@@ -535,8 +535,8 @@ mkdirp(char *path)
 		free(d);
 		return 1;
 	}
-	path = p = strdup(path);
-	for(; p != nil ;){
+	path = p = estrdup(path);
+	for(; p != nil;){
 		if(p[0] == '/')
 			p++;
 		if(p = strchr(p, '/'))
