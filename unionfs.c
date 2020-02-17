@@ -734,16 +734,16 @@ usage(void)
 void
 main(int argc, char *argv[])
 {
-	int c, i;
-	int mflag;
-	char *mtpt, *srv;
+	int c, i, mflag, stdio;
+	char *mtpt, *srvname;
 	Dir *d;
 	Union *u;
 
 	c = 0;
 	mflag = MREPL|MCREATE;
 	mtpt = "/mnt/union";
-	srv = nil;
+	srvname = nil;
+	stdio = 0;
 	ARGBEGIN{
 	case 'a':
 		mflag |= MAFTER;
@@ -767,7 +767,10 @@ main(int argc, char *argv[])
 		mtpt = nil;
 		break;
 	case 's':
-		srv = EARGF(usage());
+		srvname = EARGF(usage());
+		break;
+	case 'i':
+		stdio = 1;
 		break;
 	default:
 		usage();
@@ -799,7 +802,14 @@ main(int argc, char *argv[])
 		unionlist->next->create = 1;
 	
 	initroot();
-	postmountsrv(&fs, srv, mtpt, mflag);
-	
+
+	if(stdio == 0){
+		postmountsrv(&fs, srvname, mtpt, mflag);
+		exits(nil);
+	}
+	fs.nopipe = 1;
+	fs.infd = 0;
+	fs.outfd = 1;
+	srv(&fs);
 	exits(nil);
 }
