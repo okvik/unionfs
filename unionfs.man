@@ -4,9 +4,7 @@ unionfs \- union file server
 .SH SYNOPSIS
 .B unionfs
 [
-.B -D
-] [
-.B -abC
+.B -abiC
 ] [
 .B -M
 |
@@ -15,60 +13,89 @@ unionfs \- union file server
 ] [
 .B -s
 .I srvname
-] [ [
+] [
 .B -c
 ]
 .I path ....
-]
 .SH DESCRIPTION
 .PP
 .I Unionfs
-serves a file tree that represents a deep
-merge of the file trees given by one or
-more of the
+serves a file tree representing a deep
+merge of the trees given by the
 .I path
-arguments - unlike the namespace
-operators described in
-.IR bind (2),
-which merge directory contents on
-a single level.
+arguments - this is unlike the standard set of
+namespace operators which merge only at the
+mountpoint level.
 .PP
-If the
-.I -c
-flag is prefixed to a
+A
 .I path
-it will be marked as a target for file
-creation; otherwise the first path in the
-list will be used. 
+tree marked with the create flag
+.I -c
+is used as the destination for newly created
+files; the first path in the list is used by default.
+The path leading up to the new file or a directory
+will be created if necessary.
 .PP
 The command line options are:
-.TF "-s srvname"
-.TP
-.B -D
-Enable 9P trace output.
-.TP
-.BI -s \ srvname
-Post channel on
-.RI /srv/ srvname .
-.TP
-.BI -m \ mtpt
-Set mountpoint
-.RI ( /mnt/union
-by default,
-.I -M
-prevents it)
+.TF ".............."
 .TP
 .B -a, -b, -C
-Work as described in
+Mount flags, see
 .IR bind (1).
+.TP
+.BI -c \ path
+Mark a
+.I path
+as the create destination.
+.TP
+.B -i
+Talk on standard input / output.
+.TP
+.BI -m \ mtpt
+Mount on
+.IR mtpt ;
+.I /mnt/union
+by default.
+.I -M
+disables automatic mounting.
+.TP
+.BI -s \ srvname
+Post channel to
+.RI /srv/ srvname .
+.TP
+.B -D
+9P debug trace.
 .PD
 .SH EXAMPLES
+Construct the
+.I /bin
+tree:
+.PP
 .EX
-% unionfs -m /bin /rc/bin /arm/bin -c $home/bin/^(rc arm)
+; unionfs -m /bin \\
+	$home/bin/$objtype $home/bin/rc \\
+	/rc/bin /$objtype/bin
 .EE
+.PP
+Compile the system, redirecting all the build
+artifacts to a
+.IR ramfs (4):
+.PP
+.EX
+; ramfs
+; bind /sys/src /mnt/src
+; unionfs -m /sys/src /tmp /mnt/src
+; @{cd /sys/src; mk install}
+.EE
+.PP
+The temporary bind is necessary for
+avoiding a cycle caused by unioned tree
+.I /sys/src
+being the same as the mountpoint.
 .SH SEE ALSO
 .IR bind (1),
-.IR bind (2)
+.IR bind (2),
+.IR ramfs (4)
 .SH SOURCE
 .B git://code.a-b.xyz/unionfs
 .SH BUGS
