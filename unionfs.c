@@ -5,7 +5,7 @@
 #include <9p.h>
 
 typedef struct Union Union;
-typedef struct Fil Fil;
+typedef struct F F;
 typedef struct Ftab Ftab;
 typedef struct Fstate Fstate;
 typedef struct Qtab Qtab;
@@ -32,7 +32,7 @@ struct Qtab {
 	Qtab *next;
 };
 
-struct Fil {
+struct F {
 	Ref;
 	Dir;
 	Qtab *qtab;
@@ -42,12 +42,12 @@ struct Fil {
 
 struct Ftab {
 	long n, sz;
-	Fil **l;
+	F **l;
 };
 
 struct Fstate {
 	int fd;
-	Fil *file;
+	F *file;
 	Ftab *ftab;
 };
 
@@ -55,7 +55,7 @@ Union u0 = {.next = &u0, .prev = &u0};
 Union *unionlist = &u0;
 uvlong qidnext;
 Qtab *qidtab[Nqtab];
-Fil *root;
+F *root;
 
 void*
 emalloc(ulong sz)
@@ -210,10 +210,10 @@ unionlink(Union *p, Union *n)
 	p->next = n;
 }
 
-Fil*
+F*
 filenew(Dir *d)
 {
-	Fil *f;
+	F *f;
 	
 	f = emalloc(sizeof(*f));
 	f->ref = 1;
@@ -228,7 +228,7 @@ filenew(Dir *d)
 }
 
 void
-filefree(Fil *f)
+filefree(F *f)
 {
 	if(f == root)
 		return;
@@ -284,7 +284,7 @@ ftfree(Ftab *ft)
 }
 
 void
-ftadd(Ftab *ft, Fil *f)
+ftadd(Ftab *ft, F *f)
 {
 	Ftab *p;
 	
@@ -309,7 +309,7 @@ fthas(Ftab *ft, char *name)
 	return 0;
 }
 
-Fil*
+F*
 ftidx(Ftab *ft, long i)
 {
 	long y;
@@ -329,13 +329,13 @@ ftidx(Ftab *ft, long i)
 }
 
 Fstate*
-fstatenew(Fil *f)
+fstatenew(F *f)
 {
 	Fstate *st;
 	
 	st = emalloc(sizeof(*st));
 	st->fd = -1;
-	st->file = (Fil*)copyref(f);
+	st->file = (F*)copyref(f);
 	return st;
 }
 
@@ -385,12 +385,12 @@ fsattach(Req *r)
 	respond(r, nil);
 }
 
-Fil*
-filewalk(Fil *p, char *name)
+F*
+filewalk(F *p, char *name)
 {
 	char *path, *np;
 	Dir *d;
-	Fil *f;
+	F *f;
 	Union *u;
 	
 	np = mkpath(p->fspath, name, nil);
@@ -419,7 +419,7 @@ filewalk(Fil *p, char *name)
 char*
 walk1(Fid *fid, char *name, void *)
 {
-	Fil *p, *f;
+	F *p, *f;
 	Fstate *st;
 
 	/* not sure if needed */
@@ -461,14 +461,14 @@ fswalk(Req *r)
 }
 
 Ftab*
-filereaddir(Fil *p)
+filereaddir(F *p)
 {
 	int fd;
 	long i, n;
 	Dir *dir, *d;
 	char *path;
 	Union *u;
-	Fil *f;
+	F *f;
 	Ftab *ft;
 
 	ft = ftnew();
@@ -504,7 +504,7 @@ fsopen(Req *r)
 {
 	Fcall *i, *o;
 	Fstate *st;
-	Fil *f;
+	F *f;
 	
 	i = &r->ifcall;
 	o = &r->ofcall;
@@ -564,7 +564,7 @@ fscreate(Req *r)
 	Fcall *i, *o;
 	Union *u;
 	Fstate *st;
-	Fil *f, *nf;
+	F *f, *nf;
 	
 	i = &r->ifcall;
 	o = &r->ofcall;
@@ -607,7 +607,7 @@ void
 fsremove(Req *r)
 {
 	Fstate *st;
-	Fil *f;
+	F *f;
 	
 	st = r->fid->aux;
 	f = st->file;
@@ -619,7 +619,7 @@ fsremove(Req *r)
 }
 
 void
-dirfill(Dir *dir, Fil *f)
+dirfill(Dir *dir, F *f)
 {
 	*dir = f->Dir;
 	dir->qid = f->qid;
@@ -633,7 +633,7 @@ int
 dirgen(int i, Dir *dir, void *aux)
 {
 	Fstate *fs;
-	Fil *f;
+	F *f;
 	
 	fs = aux;
 	f = ftidx(fs->ftab, i);
@@ -648,7 +648,7 @@ fsread(Req *r)
 {
 	long n;
 	Fcall *i, *o;
-	Fil *f;
+	F *f;
 	Fstate *st;
 	
 	i = &r->ifcall;
@@ -700,7 +700,7 @@ void
 fswstat(Req *r)
 {
 	Fstate *st;
-	Fil *f;
+	F *f;
 	
 	st = r->fid->aux;
 	f = st->file;
