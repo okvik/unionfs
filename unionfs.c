@@ -727,7 +727,7 @@ Srv fs = {
 void
 usage(void)
 {
-	fprint(2, "%s [-D] [-abC] [-M | -m mtpt] [-s srv] [[-c] path ...]\n", argv0);
+	fprint(2, "%s [-abiC] [-M | -m mtpt] [-s srv] [-c] path ...\n", argv0);
 	exits("usage");
 }
 
