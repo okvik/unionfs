@@ -27,8 +27,7 @@ struct Qtab {
 	Ref;
 	ushort type;
 	uint dev;
-	uvlong path;
-	uvlong qpath;
+	uvlong path, uniqpath;
 	Qtab *next;
 };
 
@@ -53,7 +52,6 @@ struct Fstate {
 
 Union u0 = {.next = &u0, .prev = &u0};
 Union *unionlist = &u0;
-uvlong qidnext;
 Qtab *qidtab[Nqtab];
 F *root;
 
@@ -128,53 +126,47 @@ qthash(uvlong path)
 	return h & (Nqtab-1);
 }
 
-Qtab*
-qtget(Dir *d)
+uvlong
+uniqpath(uvlong path)
 {
-	int h;
+	static u16int salt;
+	int h, have;
 	Qtab *q;
-	
-	h = qthash(d->qid.path);
-	for(q = qidtab[h]; q != nil; q = q->next)
-		if(q->type == d->type && q->dev == d->dev && q->path == d->qid.path)
-			return q;
-	return nil;
-}
 
-int
-qthas(uvlong path)
-{
-	int h;
-	Qtab *q;
-	
-	for(h = 0; h < Nqtab; h++)
+	for(;;){
+		have = 0;
+		h = qthash(path);
 		for(q = qidtab[h]; q != nil; q = q->next)
-			if(q->qpath == path)
-				return 1;
-	return 0;
+			if(q->uniqpath == path){
+				have = 1;
+				break;
+			}
+		if(have == 0)
+			return path;
+		path = ((uvlong)salt<<48) | (path&((uvlong)1<<48)-1);
+		++salt;
+	}
 }
 
 Qtab*
 qtadd(Dir *d)
 {
 	int h;
-	uvlong path;
 	Qtab *q;
-	
-	if(q = qtget(d))
-		return (Qtab*)copyref(q);
-	path = d->qid.path;
-	while(qthas(path)){
-		path &= (1LL<<48)-1;
-		if(++qidnext >= 1<<16)
-			qidnext = 1;
-		path |= qidnext<<48;
-	}
+
+	h = qthash(d->qid.path);
+	for(q = qidtab[h]; q != nil; q = q->next)
+		if(q->type == d->type
+		&& q->dev == d->dev
+		&& q->path == d->qid.path)
+			return q;
+
 	q = emalloc(sizeof(*q));
 	q->type = d->type;
 	q->dev = d->dev;
 	q->path = d->qid.path;
-	q->qpath = path;
+	q->uniqpath = uniqpath(q->path);
+
 	h = qthash(q->path);
 	q->next = qidtab[h];
 	qidtab[h] = q;
@@ -219,7 +211,7 @@ filenew(Dir *d)
 	f->ref = 1;
 	f->qtab = qtadd(d);
 	f->Dir = *d;
-	f->qid.path = f->qtab->qpath;
+	f->qid.path = f->qtab->uniqpath;
 	f->name = estrdup(d->name);
 	f->uid = estrdup(d->uid);
 	f->gid = estrdup(d->gid);
