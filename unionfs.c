@@ -24,7 +24,6 @@ enum {
 };
 
 struct Qtab {
-	Ref;
 	ushort type;
 	uint dev;
 	uvlong path, uniqpath;
@@ -170,26 +169,7 @@ qtadd(Dir *d)
 	h = qthash(q->path);
 	q->next = qidtab[h];
 	qidtab[h] = q;
-	return (Qtab*)copyref(q);
-}
-
-void
-qtfree(Qtab *q)
-{
-	int h;
-	Qtab *l;
-	
-	if(decref(q))
-		return;
-	h = qthash(q->path);
-	if(qidtab[h] == q)
-		qidtab[h] = q->next;
-	else{
-		for(l = qidtab[h]; l->next != q; l = l->next)
-			;
-		l->next = q->next;
-	}
-	free(q);
+	return q;
 }
 
 void
@@ -226,7 +206,6 @@ filefree(F *f)
 		return;
 	if(decref(f))
 		return;
-//	qtfree(f->qtab);
 	free(f->name);
 	free(f->uid);
 	free(f->gid);
