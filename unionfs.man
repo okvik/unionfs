@@ -6,8 +6,6 @@ unionfs \- union file server
 [
 .B -abiC
 ] [
-.B -M
-|
 .B -m
 .I mtpt
 ] [
@@ -56,8 +54,6 @@ Mount on
 .IR mtpt ;
 .I /mnt/union
 by default.
-.I -M
-disables automatic mounting.
 .TP
 .BI -s \ srvname
 Post channel to

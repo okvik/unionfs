@@ -698,7 +698,7 @@ Srv fs = {
 void
 usage(void)
 {
-	fprint(2, "%s [-abiC] [-M | -m mtpt] [-s srv] [-c] path ...\n", argv0);
+	fprint(2, "%s [-abiC] [-m mtpt] [-s srv] [-c] path ...\n", argv0);
 	exits("usage");
 }
 
@@ -712,7 +712,7 @@ main(int argc, char *argv[])
 
 	c = 0;
 	mflag = MREPL|MCREATE;
-	mtpt = "/mnt/union";
+	mtpt = nil;
 	srvname = nil;
 	stdio = 0;
 	ARGBEGIN{
@@ -734,9 +734,6 @@ main(int argc, char *argv[])
 	case 'm':
 		mtpt = EARGF(usage());
 		break;
-	case 'M':
-		mtpt = nil;
-		break;
 	case 's':
 		srvname = EARGF(usage());
 		break;
@@ -748,12 +745,14 @@ main(int argc, char *argv[])
 	}ARGEND;
 	if(argc < 1)
 		usage();
+	if((mtpt || srvname) == 0)
+		mtpt = "/mnt/union";
 	for(i = 0; i < argc; i++){
 		if(strncmp(argv[i], "-c", 2) == 0){
 			c++;
 			continue;
 		}
-		if(strcmp(argv[i], mtpt) == 0){
+		if(mtpt && strcmp(argv[i], mtpt) == 0){
 			fprint(2, "%s: mountpoint cycle, skipping branch %s\n", argv0, argv[i]);
 			continue;
 		}
