@@ -778,7 +778,6 @@ main(int argc, char *argv[])
 		postmountsrv(&fs, srvname, mtpt, mflag);
 		exits(nil);
 	}
-	fs.nopipe = 1;
 	fs.infd = 0;
 	fs.outfd = 1;
 	srv(&fs);
