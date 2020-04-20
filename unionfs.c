@@ -3,114 +3,12 @@
 #include <fcall.h>
 #include <thread.h>
 #include <9p.h>
-
-typedef struct Union Union;
-typedef struct F F;
-typedef struct Ftab Ftab;
-typedef struct Fstate Fstate;
-typedef struct Qtab Qtab;
-
-struct Union {
-	char *root;
-	int create;
-	Union *prev, *next;
-};
-
-enum {
-	Nqbit = 5,
-	Nqtab = 1<<Nqbit,
-	Nftab = 32,
-	Nftlist = 32,
-};
-
-struct Qtab {
-	ushort type;
-	uint dev;
-	uvlong path, uniqpath;
-	Qtab *next;
-};
-
-struct F {
-	Ref;
-	Dir;
-	Qtab *qtab;
-	char *path;	/* real path */
-	char *fspath;	/* internal path */
-};
-
-struct Ftab {
-	long n, sz;
-	F **l;
-};
-
-struct Fstate {
-	int fd;
-	F *file;
-	Ftab *ftab;
-};
+#include "unionfs.h"
 
 Union u0 = {.next = &u0, .prev = &u0};
 Union *unionlist = &u0;
 Qtab *qidtab[Nqtab];
 F *root;
-
-void*
-emalloc(ulong sz)
-{
-	void *v;
-
-	if((v = malloc(sz)) == nil)
-		sysfatal("emalloc: %r");
-	memset(v, 0, sz);
-	setmalloctag(v, getcallerpc(&sz));
-	
-	return v;
-}
-
-void*
-erealloc(void *v, ulong sz)
-{
-	if((v = realloc(v, sz)) == nil && sz != 0)
-		sysfatal("realloc: %r");
-	setrealloctag(v, getcallerpc(&v));
-	return v;
-}
-
-char*
-estrdup(char *s)
-{
-	char *p;
-
-	if((p = strdup(s)) == nil)
-		sysfatal("estrdup: %r");
-	setmalloctag(p, getcallerpc(&s));
-	return p;
-}
-
-char*
-mkpath(char *a0, ...)
-{
-	va_list args;
-	int i;
-	char *a;
-	char *ap[] = {a0, "", ""};
-
-	va_start(args, a0);
-	for(i = 1; (a = va_arg(args, char*)) != nil && i < 3; i++)
-		ap[i] = a;
-	va_end(args);
-	if((a = smprint("%s/%s/%s", ap[0], ap[1], ap[2])) == nil)
-		sysfatal("smprint: %r");
-
-	return cleanname(a);
-}
-
-Ref*
-copyref(Ref *r)
-{
-	incref(r);
-	return r;
-}
 
 int
 qthash(uvlong path)
@@ -682,19 +580,6 @@ fswstat(Req *r)
 	respond(r, nil);
 }
 
-Srv fs = {
-	.attach = fsattach,
-	.walk = fswalk,
-	.open = fsopen,
-	.create = fscreate,
-	.remove = fsremove,
-	.read = fsread,
-	.write = fswrite,
-	.stat = fsstat,
-	.wstat = fswstat,
-	.destroyfid = destroyfid,
-};
-
 char*
 pivot(char *p)
 {
@@ -708,12 +593,18 @@ pivot(char *p)
 	return q;
 }
 
-void
-usage(void)
-{
-	fprint(2, "%s [-abiC] [-m mtpt] [-s srv] [-c] path ...\n", argv0);
-	exits("usage");
-}
+Srv fs = {
+	.attach = fsattach,
+	.walk = fswalk,
+	.open = fsopen,
+	.create = fscreate,
+	.remove = fsremove,
+	.read = fsread,
+	.write = fswrite,
+	.stat = fsstat,
+	.wstat = fswstat,
+	.destroyfid = destroyfid,
+};
 
 void
 main(int argc, char *argv[])
