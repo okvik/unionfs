@@ -1,9 +1,14 @@
 </$objtype/mkfile
 
-TARG=unionfs
-OFILES=$TARG.$O
 BIN=$home/bin/$objtype
 MAN=/sys/man/4
+TARG=unionfs
+
+HFILES=\
+	unionfs.h
+OFILES=\
+	util.$O\
+	unionfs.$O
 
 </sys/src/cmd/mkone
 
