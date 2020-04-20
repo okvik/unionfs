@@ -73,21 +73,15 @@ tree:
 	/rc/bin /$objtype/bin
 .EE
 .PP
-Compile the system, redirecting all the build
+Compile the system, redirecting all build
 artifacts to a
 .IR ramfs (4):
 .PP
 .EX
-; ramfs
-; bind /sys/src /mnt/src
-; unionfs -m /sys/src /tmp /mnt/src
+; ramfs -m /tmp
+; unionfs -m /sys/src /tmp /sys/src
 ; @{cd /sys/src; mk install}
 .EE
-.PP
-The temporary bind is necessary for
-avoiding a cycle caused by unioned tree
-.I /sys/src
-being the same as the mountpoint.
 .SH SEE ALSO
 .IR bind (1),
 .IR bind (2),

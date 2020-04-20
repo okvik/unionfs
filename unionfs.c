@@ -695,6 +695,19 @@ Srv fs = {
 	.destroyfid = destroyfid,
 };
 
+char*
+pivot(char *p)
+{
+	static n = 0;
+	char *q;
+
+	if((q = smprint("/mnt/union.%d.%d", getpid(), n++)) == nil)
+		sysfatal("smprint: %r");
+	if(bind(p, q, MREPL) < 0)
+		sysfatal("bind: %r");
+	return q;
+}
+
 void
 usage(void)
 {
@@ -706,7 +719,7 @@ void
 main(int argc, char *argv[])
 {
 	int c, i, mflag, stdio;
-	char *mtpt, *srvname;
+	char *mtpt, *srvname, *branch, *p;
 	Dir *d;
 	Union *u;
 
@@ -752,18 +765,22 @@ main(int argc, char *argv[])
 			c++;
 			continue;
 		}
-		if(mtpt && strcmp(argv[i], mtpt) == 0){
-			fprint(2, "%s: mountpoint cycle, skipping branch %s\n", argv0, argv[i]);
-			continue;
-		}
-		if((d = dirstat(argv[i])) == nil){
-			fprint(2, "%s: %s does not exist, skipping\n", argv0, argv[i]);
+
+		branch = mkpath(argv[i], nil);
+		if((d = dirstat(branch)) == nil){
+			fprint(2, "%s: %s does not exist, skipping\n", argv0, branch);
+			free(branch);
 			continue;
 		}
 		free(d);
+		if(mtpt && strcmp(branch, mtpt) == 0){
+			p = pivot(branch);
+			free(branch);
+			branch = p;
+		}
 		u = emalloc(sizeof(*u));
 		u->create = c == 1 ? c : 0;
-		u->root = mkpath(argv[i], nil);
+		u->root = branch;
 		unionlink(unionlist, u);
 	}
 	if(unionlist->next == &u0)
