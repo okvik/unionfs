@@ -1,6 +1,6 @@
 </$objtype/mkfile
 
-BIN=$home/bin/$objtype
+BIN=/$objtype/bin
 MAN=/sys/man/4
 TARG=unionfs
 
