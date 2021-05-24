@@ -303,7 +303,7 @@ walk1(Fid *fid, char *name, void *)
 	st = fid->aux;
 	p = st->file;
 	if((f = filewalk(p, name)) == nil)
-		return "no file";
+		return "not found";
 	st->file = f;
 
 	fid->qid = f->qid;
