@@ -7,8 +7,10 @@
 
 Union u0 = {.next = &u0, .prev = &u0};
 Union *unionlist = &u0;
+QLock qidtablock;
 Qtab *qidtab[Nqtab];
 F *root;
+Srv thefs;
 
 int
 qthash(uvlong path)
@@ -51,12 +53,13 @@ qtadd(Dir *d)
 	int h;
 	Qtab *q;
 
+	qlock(&qidtablock);
 	h = qthash(d->qid.path);
 	for(q = qidtab[h]; q != nil; q = q->next)
 		if(q->type == d->type
 		&& q->dev == d->dev
 		&& q->path == d->qid.path)
-			return q;
+			goto done;
 
 	q = emalloc(sizeof(*q));
 	q->type = d->type;
@@ -67,6 +70,8 @@ qtadd(Dir *d)
 	h = qthash(q->path);
 	q->next = qidtab[h];
 	qidtab[h] = q;
+done:
+	qunlock(&qidtablock);
 	return q;
 }
 
@@ -326,7 +331,9 @@ destroyfid(Fid *fid)
 void
 fswalk(Req *r)
 {
+	srvrelease(&thefs);
 	walkandclone(r, walk1, clone, nil);
+	srvacquire(&thefs);
 }
 
 Ftab*
@@ -380,16 +387,19 @@ fsopen(Req *r)
 	st = r->fid->aux;
 	f = st->file;
 
+	srvrelease(&thefs);
 	if(f->mode&DMDIR)
 		st->ftab = filereaddir(f);
 	else{
 		if((st->fd = open(f->path, i->mode)) < 0){
 			responderror(r);
+			srvacquire(&thefs);
 			return;
 		}
 		o->iounit = iounit(st->fd);
 	}
 	respond(r, nil);
+	srvacquire(&thefs);
 }
 
 int
@@ -440,12 +450,14 @@ fscreate(Req *r)
 	st = r->fid->aux;
 	f = st->file;
 	
+	srvrelease(&thefs);
 	for(u = unionlist->next; u != unionlist; u = u->next)
 		if(u->create == 1)
 			break;
 	path = mkpath(u->root, f->fspath, nil);
 	if(mkdirp(path) < 0){
 		responderror(r);
+		srvacquire(&thefs);
 		return;
 	}
 	npath = mkpath(path, i->name, nil);
@@ -453,11 +465,13 @@ fscreate(Req *r)
 	st = emalloc(sizeof(*st));
 	if((st->fd = create(npath, i->mode, i->perm)) < 0){
 		responderror(r);
+		srvacquire(&thefs);
 		return;
 	}
 	if((d = dirfstat(st->fd)) == nil){
 		fstatefree(st);
 		responderror(r);
+		srvacquire(&thefs);
 		return;
 	}
 	nf = filenew(d);
@@ -470,6 +484,7 @@ fscreate(Req *r)
 	r->fid->qid = nf->qid;
 	o->qid = nf->qid;
 	respond(r, nil);
+	srvacquire(&thefs);
 }
 
 void
@@ -480,11 +495,14 @@ fsremove(Req *r)
 	
 	st = r->fid->aux;
 	f = st->file;
+	srvrelease(&thefs);
 	if(remove(f->path) < 0){
 		responderror(r);
+		srvacquire(&thefs);
 		return;
 	}
 	respond(r, nil);
+	srvacquire(&thefs);
 }
 
 void
@@ -525,17 +543,21 @@ fsread(Req *r)
 	st = r->fid->aux;
 	f = st->file;
 
+	srvrelease(&thefs);
 	if(f->mode&DMDIR){
 		dirread9p(r, dirgen, st);
 		respond(r, nil);
+		srvacquire(&thefs);
 		return;
 	}
 	if((n = pread(st->fd, o->data, i->count, i->offset)) < 0){
 		responderror(r);
+		srvacquire(&thefs);
 		return;
 	}
 	r->ofcall.count = n;
 	respond(r, nil);
+	srvacquire(&thefs);
 }
 
 void
@@ -547,12 +569,15 @@ fswrite(Req *r)
 	i = &r->ifcall;
 	o = &r->ofcall;
 	fs = r->fid->aux;
-
+	
+	srvrelease(&thefs);
 	if((o->count = pwrite(fs->fd, i->data, i->count, i->offset)) != i->count){
 		responderror(r);
+		srvacquire(&thefs);
 		return;
 	}
 	respond(r, nil);
+	srvacquire(&thefs);
 }
 
 void
@@ -573,11 +598,15 @@ fswstat(Req *r)
 	
 	st = r->fid->aux;
 	f = st->file;
+	
+	srvrelease(&thefs);
 	if(dirwstat(f->path, &r->d) < 0){
 		responderror(r);
+		srvacquire(&thefs);
 		return;
 	}
 	respond(r, nil);
+	srvacquire(&thefs);
 }
 
 char*
@@ -592,19 +621,6 @@ pivot(char *p)
 		sysfatal("bind: %r");
 	return q;
 }
-
-Srv fs = {
-	.attach = fsattach,
-	.walk = fswalk,
-	.open = fsopen,
-	.create = fscreate,
-	.remove = fsremove,
-	.read = fsread,
-	.write = fswrite,
-	.stat = fsstat,
-	.wstat = fswstat,
-	.destroyfid = destroyfid,
-};
 
 void
 main(int argc, char *argv[])
@@ -679,14 +695,23 @@ main(int argc, char *argv[])
 	if(c == 0)
 		unionlist->next->create = 1;
 	
+	thefs.attach = fsattach;
+	thefs.walk = fswalk;
+	thefs.open = fsopen;
+	thefs.create = fscreate;
+	thefs.remove = fsremove;
+	thefs.read = fsread;
+	thefs.write = fswrite;
+	thefs.stat = fsstat;
+	thefs.wstat = fswstat;
+	thefs.destroyfid = destroyfid;
 	initroot();
-
 	if(stdio == 0){
-		postmountsrv(&fs, srvname, mtpt, mflag);
+		postmountsrv(&thefs, srvname, mtpt, mflag);
 		exits(nil);
 	}
-	fs.infd = 0;
-	fs.outfd = 1;
-	srv(&fs);
+	thefs.infd = 0;
+	thefs.outfd = 1;
+	srv(&thefs);
 	exits(nil);
 }
