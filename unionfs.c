@@ -296,10 +296,6 @@ walk1(Fid *fid, char *name, void *)
 	F *p, *f;
 	Fstate *st;
 
-	/* not sure if needed */
-	if(!(fid->qid.type&QTDIR))
-		return "walk in non-directory";
-	
 	st = fid->aux;
 	p = st->file;
 	if((f = filewalk(p, name)) == nil)
