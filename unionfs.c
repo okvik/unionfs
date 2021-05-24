@@ -268,11 +268,6 @@ filewalk(F *p, char *name)
 	Union *u;
 	
 	np = mkpath(p->fspath, name, nil);
-	if(strcmp(np, ".") == 0){
-		free(np);
-		filefree(p);
-		return root;
-	}
 	for(u = unionlist->next; u != unionlist; u = u->next){
 		path = mkpath(u->root, np, nil);
 		if((d = dirstat(path)) == nil){
