@@ -8,6 +8,7 @@ HFILES=\
 	unionfs.h
 OFILES=\
 	util.$O\
+	qmap.$O\
 	unionfs.$O
 
 </sys/src/cmd/mkone

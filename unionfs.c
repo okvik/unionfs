@@ -7,73 +7,8 @@
 
 Union u0 = {.next = &u0, .prev = &u0};
 Union *unionlist = &u0;
-QLock qidtablock;
-Qtab *qidtab[Nqtab];
 F *root;
 Srv thefs;
-
-int
-qthash(uvlong path)
-{
-	int h, n;
-	
-	h = 0;
-	for(n = 0; n < 64; n += Nqbit){
-		h ^= path;
-		path >>= Nqbit;
-	}
-	return h & (Nqtab-1);
-}
-
-uvlong
-uniqpath(uvlong path)
-{
-	static u16int salt;
-	int h, have;
-	Qtab *q;
-
-	for(;;){
-		have = 0;
-		h = qthash(path);
-		for(q = qidtab[h]; q != nil; q = q->next)
-			if(q->uniqpath == path){
-				have = 1;
-				break;
-			}
-		if(have == 0)
-			return path;
-		path = ((uvlong)salt<<48) | (path&((uvlong)1<<48)-1);
-		++salt;
-	}
-}
-
-Qtab*
-qtadd(Dir *d)
-{
-	int h;
-	Qtab *q;
-
-	qlock(&qidtablock);
-	h = qthash(d->qid.path);
-	for(q = qidtab[h]; q != nil; q = q->next)
-		if(q->type == d->type
-		&& q->dev == d->dev
-		&& q->path == d->qid.path)
-			goto done;
-
-	q = emalloc(sizeof(*q));
-	q->type = d->type;
-	q->dev = d->dev;
-	q->path = d->qid.path;
-	q->uniqpath = uniqpath(q->path);
-
-	h = qthash(q->path);
-	q->next = qidtab[h];
-	qidtab[h] = q;
-done:
-	qunlock(&qidtablock);
-	return q;
-}
 
 void
 unionlink(Union *p, Union *n)
@@ -92,9 +27,8 @@ filenew(Dir *d)
 	
 	f = emalloc(sizeof(*f));
 	f->ref = 1;
-	f->qtab = qtadd(d);
 	f->Dir = *d;
-	f->qid.path = f->qtab->uniqpath;
+	f->qid = qencode(d);
 	f->name = estrdup(d->name);
 	f->uid = estrdup(d->uid);
 	f->gid = estrdup(d->gid);
@@ -305,7 +239,7 @@ char*
 clone(Fid *old, Fid *new, void*)
 {
 	Fstate *fs;
-	
+
 	fs = old->aux;
 	new->aux = fstatenew(fs->file);
 	return nil;
