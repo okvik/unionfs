@@ -3,15 +3,14 @@ enum {
 	Nftlist = 32,
 };
 
-typedef struct Union Union;
+typedef struct Branch Branch;
 typedef struct F F;
 typedef struct Ftab Ftab;
 typedef struct Fstate Fstate;
 
-struct Union {
+struct Branch {
 	char *root;
 	int create;
-	Union *prev, *next;
 };
 
 struct F {

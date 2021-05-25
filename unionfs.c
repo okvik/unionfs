@@ -5,26 +5,16 @@
 #include <9p.h>
 #include "unionfs.h"
 
-Union u0 = {.next = &u0, .prev = &u0};
-Union *unionlist = &u0;
+Branch *branch;
+usize nbranch;
 F *root;
 Srv thefs;
-
-void
-unionlink(Union *p, Union *n)
-{
-	p = p->prev;
-	n->next = p->next;
-	n->prev = p;
-	p->next->prev = n;
-	p->next = n;
-}
 
 F*
 filenew(Dir *d)
 {
 	F *f;
-	
+
 	f = emalloc(sizeof(*f));
 	f->ref = 1;
 	f->Dir = *d;
@@ -199,11 +189,10 @@ filewalk(F *p, char *name)
 	char *path, *np;
 	Dir *d;
 	F *f;
-	Union *u;
 	
 	np = mkpath(p->fspath, name, nil);
-	for(u = unionlist->next; u != unionlist; u = u->next){
-		path = mkpath(u->root, np, nil);
+	for(int i = 0; i < nbranch; i++){
+		path = mkpath(branch[i].root, np, nil);
 		if((d = dirstat(path)) == nil){
 			free(path);
 			continue;
@@ -265,16 +254,15 @@ Ftab*
 filereaddir(F *p)
 {
 	int fd;
-	long i, n;
+	long n;
 	Dir *dir, *d;
 	char *path;
-	Union *u;
 	F *f;
 	Ftab *ft;
 
 	ft = ftnew();
-	for(u = unionlist->next; u != unionlist; u = u->next){
-		path = mkpath(u->root, p->fspath, nil);
+	for(usize i = 0; i < nbranch; i++){
+		path = mkpath(branch[i].root, p->fspath, nil);
 		if((d = dirstat(path)) == nil){
 		err:
 			free(path);
@@ -285,10 +273,10 @@ filereaddir(F *p)
 			goto err;
 		free(path);
 		while((n = dirread(fd, &dir)) > 0){
-			for(i = 0; i < n; i++){
-				if(u->prev != unionlist && fthas(ft, dir[i].name))
+			for(usize j = 0; j < n; j++){
+				if(i > 0 && fthas(ft, dir[j].name))
 					continue;
-				f = filenew(&dir[i]);
+				f = filenew(&dir[j]);
 				ftadd(ft, f);
 			}
 			free(dir);
@@ -303,12 +291,12 @@ filereaddir(F *p)
 void
 fsopen(Req *r)
 {
-	Fcall *i, *o;
+	Fcall *T, *R;
 	Fstate *st;
 	F *f;
 	
-	i = &r->ifcall;
-	o = &r->ofcall;
+	T = &r->ifcall;
+	R = &r->ofcall;
 	st = r->fid->aux;
 	f = st->file;
 
@@ -316,12 +304,12 @@ fsopen(Req *r)
 	if(f->mode&DMDIR)
 		st->ftab = filereaddir(f);
 	else{
-		if((st->fd = open(f->path, i->mode)) < 0){
+		if((st->fd = open(f->path, T->mode)) < 0){
 			responderror(r);
 			srvacquire(&thefs);
 			return;
 		}
-		o->iounit = iounit(st->fd);
+		R->iounit = iounit(st->fd);
 	}
 	respond(r, nil);
 	srvacquire(&thefs);
@@ -364,31 +352,31 @@ void
 fscreate(Req *r)
 {
 	char *path, *npath;
+	usize i;
 	Dir *d;
-	Fcall *i, *o;
-	Union *u;
+	Fcall *T, *R;
 	Fstate *st;
 	F *f, *nf;
 	
-	i = &r->ifcall;
-	o = &r->ofcall;
+	T = &r->ifcall;
+	R = &r->ofcall;
 	st = r->fid->aux;
 	f = st->file;
 	
 	srvrelease(&thefs);
-	for(u = unionlist->next; u != unionlist; u = u->next)
-		if(u->create == 1)
+	for(i = 0; i < nbranch; i++)
+		if(branch[i].create == 1)
 			break;
-	path = mkpath(u->root, f->fspath, nil);
+	path = mkpath(branch[i].root, f->fspath, nil);
 	if(mkdirp(path) < 0){
 		responderror(r);
 		srvacquire(&thefs);
 		return;
 	}
-	npath = mkpath(path, i->name, nil);
+	npath = mkpath(path, T->name, nil);
 	free(path);
 	st = emalloc(sizeof(*st));
-	if((st->fd = create(npath, i->mode, i->perm)) < 0){
+	if((st->fd = create(npath, T->mode, T->perm)) < 0){
 		responderror(r);
 		srvacquire(&thefs);
 		return;
@@ -407,7 +395,7 @@ fscreate(Req *r)
 	
 	r->fid->aux = st;
 	r->fid->qid = nf->qid;
-	o->qid = nf->qid;
+	R->qid = nf->qid;
 	respond(r, nil);
 	srvacquire(&thefs);
 }
@@ -459,12 +447,12 @@ void
 fsread(Req *r)
 {
 	long n;
-	Fcall *i, *o;
+	Fcall *T, *R;
 	F *f;
 	Fstate *st;
 	
-	i = &r->ifcall;
-	o = &r->ofcall;
+	T = &r->ifcall;
+	R = &r->ofcall;
 	st = r->fid->aux;
 	f = st->file;
 
@@ -475,7 +463,7 @@ fsread(Req *r)
 		srvacquire(&thefs);
 		return;
 	}
-	if((n = pread(st->fd, o->data, i->count, i->offset)) < 0){
+	if((n = pread(st->fd, R->data, T->count, T->offset)) < 0){
 		responderror(r);
 		srvacquire(&thefs);
 		return;
@@ -488,15 +476,15 @@ fsread(Req *r)
 void
 fswrite(Req *r)
 {
-	Fcall *i, *o;
+	Fcall *T, *R;
 	Fstate *fs;
 	
-	i = &r->ifcall;
-	o = &r->ofcall;
+	T = &r->ifcall;
+	R = &r->ofcall;
 	fs = r->fid->aux;
 	
 	srvrelease(&thefs);
-	if((o->count = pwrite(fs->fd, i->data, i->count, i->offset)) != i->count){
+	if((R->count = pwrite(fs->fd, T->data, T->count, T->offset)) != T->count){
 		responderror(r);
 		srvacquire(&thefs);
 		return;
@@ -551,9 +539,9 @@ void
 main(int argc, char *argv[])
 {
 	int c, i, mflag, stdio;
-	char *mtpt, *srvname, *branch, *p;
+	char *mtpt, *srvname, *path, *p;
 	Dir *d;
-	Union *u;
+	Branch *b;
 
 	c = 0;
 	mflag = MREPL|MCREATE;
@@ -592,33 +580,35 @@ main(int argc, char *argv[])
 		usage();
 	if((mtpt || srvname) == 0)
 		mtpt = "/mnt/union";
+	nbranch = argc;
+	branch = b = emalloc(nbranch * sizeof(Branch));
 	for(i = 0; i < argc; i++){
-		if(strncmp(argv[i], "-c", 2) == 0){
+		if(strcmp(argv[i], "-c") == 0){
+			nbranch--;
 			c++;
 			continue;
 		}
 
-		branch = mkpath(argv[i], nil);
-		if((d = dirstat(branch)) == nil){
-			fprint(2, "%s: %s does not exist, skipping\n", argv0, branch);
-			free(branch);
+		path = mkpath(argv[i], nil);
+		if((d = dirstat(path)) == nil){
+			fprint(2, "%s: %s does not exist, skipping\n", argv0, path);
+			free(path);
 			continue;
 		}
 		free(d);
-		if(mtpt && strcmp(branch, mtpt) == 0){
-			p = pivot(branch);
-			free(branch);
-			branch = p;
+		if(mtpt && strcmp(path, mtpt) == 0){
+			p = pivot(path);
+			free(path);
+			path = p;
 		}
-		u = emalloc(sizeof(*u));
-		u->create = c == 1 ? c : 0;
-		u->root = branch;
-		unionlink(unionlist, u);
+		b->root = path;
+		b->create = c == 1 ? c : 0;
+		b++;
 	}
-	if(unionlist->next == &u0)
+	if(branch[0].root == nil)
 		sysfatal("empty branch list");
 	if(c == 0)
-		unionlist->next->create = 1;
+		branch[0].create = 1;
 	
 	thefs.attach = fsattach;
 	thefs.walk = fswalk;
