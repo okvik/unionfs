@@ -1,40 +1,30 @@
-enum {
-	Nftab = 32,
-	Nftlist = 32,
-};
-
 typedef struct Branch Branch;
-typedef struct F F;
-typedef struct Ftab Ftab;
-typedef struct Fstate Fstate;
+typedef struct FILE FILE;
+typedef struct Mtpt Mtpt;
 
 struct Branch {
 	char *root;
 	int create;
 };
 
-struct F {
-	Ref;
+struct FILE {
 	Dir;
-	char *path;   /* real path */
-	char *fspath; /* internal path */
-};
+	char *realpath;
+	char *path;
 
-struct Ftab {
-	long n, sz;
-	F **l;
-};
-
-struct Fstate {
 	int fd;
-	F *file;
-	Ftab *ftab;
+	Mtpt *mtpt;
+	Dir *dirs;
+	long ndirs;
+};
+
+struct Mtpt {
+	char *path;
+	Mtpt *next;
 };
 
 void usage(void);
 Qid qencode(Dir*);
 char *mkpath(char*, ...);
-Ref *copyref(Ref*);
 void *emalloc(ulong);
-void *erealloc(void*, ulong);
 char *estrdup(char*);

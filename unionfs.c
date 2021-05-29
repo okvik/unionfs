@@ -5,313 +5,319 @@
 #include <9p.h>
 #include "unionfs.h"
 
+Srv thefs;
 Branch *branch;
 usize nbranch;
-F *root;
-Srv thefs;
+QLock mtptlock;
+Mtpt *mtpt;
 
-F*
-filenew(Dir *d)
+Mtpt*
+mtptgrab(void)
 {
-	F *f;
+	static int mtptnext = 0;
+	Mtpt *m;
 
-	f = emalloc(sizeof(*f));
-	f->ref = 1;
-	f->Dir = *d;
-	f->qid = qencode(d);
-	f->name = estrdup(d->name);
-	f->uid = estrdup(d->uid);
-	f->gid = estrdup(d->gid);
-	f->muid = estrdup(d->muid);
+	qlock(&mtptlock);
+	if(mtpt == nil){
+		mtpt = emalloc(sizeof(Mtpt));
+		mtpt->path = smprint("/mnt/mtpt%d", mtptnext++);
+	}
+	m = mtpt;
+	mtpt = m->next;
+	qunlock(&mtptlock);
+	unmount(nil, m->path);
+	return m;
+}
+
+void
+mtptfree(Mtpt *m)
+{
+	qlock(&mtptlock);
+	m->next = mtpt;
+	mtpt = m;
+	qunlock(&mtptlock);
+}
+
+FILE*
+filenew(void)
+{
+	FILE *f;
+
+	f = emalloc(sizeof(FILE));
+	f->fd = -1;
 	return f;
 }
 
 void
-filefree(F *f)
+filefree(FILE *f)
 {
-	if(f == root)
+	if(f == nil)
 		return;
-	if(decref(f))
-		return;
-	free(f->name);
-	free(f->uid);
-	free(f->gid);
-	free(f->muid);
-	free(f->path);
-	free(f->fspath);
+	if(f->name) free(f->name);
+	if(f->uid) free(f->uid);
+	if(f->gid) free(f->gid);
+	if(f->muid) free(f->muid);
+	if(f->path) free(f->path);
+	if(f->realpath) free(f->realpath);
+	if(f->fd != -1) close(f->fd);
+	if(f->dirs) free(f->dirs);
+	if(f->mtpt) mtptfree(f->mtpt);
 	free(f);
 }
 
-uint
-fthash(char *s)
-{
-	uint h;
-	for(h = 0; *s; s++)
-		h = *s + 31*h;
-	return h % Nftab;
-}
-
-Ftab*
-ftnew(void)
-{
-	int i;
-	Ftab *ft, *p;
-	
-	ft = emalloc(Nftab*sizeof(Ftab));
-	for(i = 0; i < Nftab; i++){
-		p = &ft[i];
-		p->sz = Nftlist;
-		p->l = emalloc(p->sz*sizeof(*p->l));
-	}
-	return ft;
-}
-
 void
-ftfree(Ftab *ft)
+dircopy(Dir *a, Dir *b)
 {
-	int i, j;
-	Ftab *p;
-	
-	for(i = 0; i < Nftab; i++){
-		p = &ft[i];
-		for(j = 0; j < p->n; j++)
-			filefree(p->l[j]);
-		free(p->l);
-	}
-	free(ft);
-}
-
-void
-ftadd(Ftab *ft, F *f)
-{
-	Ftab *p;
-	
-	p = &ft[fthash(f->name)];
-	if(p->n == p->sz){
-		p->sz *= 2;
-		p->l = erealloc(p->l, p->sz*sizeof(*p->l));
-	}
-	p->l[p->n++] = f;
-}
-
-int
-fthas(Ftab *ft, char *name)
-{
-	int i;
-	Ftab *p;
-	
-	p = &ft[fthash(name)];
-	for(i = 0; i < p->n; i++)
-		if(strcmp(p->l[i]->name, name) == 0)
-			return 1;
-	return 0;
-}
-
-F*
-ftidx(Ftab *ft, long i)
-{
-	long y;
-	Ftab *p;
-	
-	for(y = 0; y < Nftab; y++){
-		p = &ft[y];
-		if(p->n == 0)
-			continue;
-		if(i >= p->n){
-			i -= p->n;
-			continue;
-		}
-		return p->l[i];
-	}
-	return nil;
-}
-
-Fstate*
-fstatenew(F *f)
-{
-	Fstate *st;
-	
-	st = emalloc(sizeof(*st));
-	st->fd = -1;
-	st->file = (F*)copyref(f);
-	return st;
-}
-
-void
-fstatefree(Fstate *st)
-{
-	if(st->file)
-		filefree(st->file);
-	if(st->ftab)
-		ftfree(st->ftab);
-	close(st->fd);
-	free(st);
-}
-
-void
-initroot(void)
-{
-	char *user;
-	Dir d;
-	
-	nulldir(&d);
-	d.qid = (Qid){0, 0, QTDIR};
-	d.name = ".";
-	d.mode = 0777|DMDIR;
-	user = getuser();
-	d.uid = user;
-	d.gid = user;
-	d.muid = user;
-	d.mtime = time(0);
-	d.atime = time(0);
-	d.length = 0;
-	
-	root = filenew(&d);
-	root->fspath = estrdup(d.name);
-	root->path = estrdup(d.name);
+	a->type = b->type;
+	a->dev = b->dev;
+	a->qid = b->qid;
+	a->mode = b->mode;
+	a->mtime = b->mtime;
+	a->atime = b->atime;
+	a->name = estrdup(b->name);
+	a->uid = estrdup(b->uid);
+	a->gid = estrdup(b->gid);
+	a->muid = estrdup(b->muid);
 }
 
 void
 fsattach(Req *r)
 {
-	Fstate *st;
+	FILE *f;
+	char *user;
 	
-	st = fstatenew(root);
-	r->fid->aux = st;
-	r->fid->qid = root->qid;
-	r->ofcall.qid = root->qid;
+	f = filenew();
+	f->name = estrdup("/");
+	f->mode = 0777|DMDIR;
+	user = getuser();
+	f->uid = estrdup(user);
+	f->gid = estrdup(user);
+	f->muid = estrdup(user);
+	f->mtime = f->atime = time(0);
+	f->type = 0xFFFFFFFF;
+	f->dev = 0xFFFFFFFFFFFFFFFF;
+	f->qid = (Qid){0, 0, QTDIR};
+	f->qid = qencode(f);
+	f->path = estrdup(f->name);
+	f->realpath = estrdup(f->name);
+	
+	r->fid->aux = f;
+	r->fid->qid = f->qid;
+	r->ofcall.qid = f->qid;
 	respond(r, nil);
 }
 
-F*
-filewalk(F *p, char *name)
+char*
+mkpath(char *a0, ...)
 {
-	char *path, *np;
-	Dir *d;
-	F *f;
+	va_list args;
+	int i;
+	char *a;
+	char *ap[] = {a0, "", ""};
+
+	va_start(args, a0);
+	for(i = 1; (a = va_arg(args, char*)) != nil && i < 3; i++)
+		ap[i] = a;
+	va_end(args);
+	if((a = smprint("%s/%s/%s", ap[0], ap[1], ap[2])) == nil)
+		sysfatal("smprint: %r");
+
+	return cleanname(a);
+}
+
+char*
+clone(Fid *fid, Fid *newfid, void*)
+{
+	FILE *f;
+	FILE *parent = fid->aux;
 	
-	np = mkpath(p->fspath, name, nil);
-	for(int i = 0; i < nbranch; i++){
-		path = mkpath(branch[i].root, np, nil);
-		if((d = dirstat(path)) == nil){
-			free(path);
+	f = filenew();
+	dircopy(f, parent);
+	f->qid = parent->qid;
+	f->path = estrdup(parent->path);
+	f->realpath = estrdup(parent->realpath);
+	newfid->aux = f;
+	return nil;
+}
+
+char*
+walkto(Fid *fid, char *name, void *aux)
+{
+	Req *r;
+	Dir *d;
+	FILE *f;
+	char *path, *realpath;
+	int i, *nwalk;
+	
+	r = aux;
+	f = fid->aux;
+	nwalk = r->aux;
+	path = mkpath(f->path, name, nil);
+	for(i = 0; i < nbranch; i++){
+		realpath = mkpath(branch[i].root, path, nil);
+		if((d = dirstat(realpath)) == nil)
 			continue;
+		if(*nwalk == r->ifcall.nwname){
+			filefree(f);
+			f = filenew();
+			dircopy(f, d);
+		}else{
+			free(f->path);
+			free(f->realpath);
 		}
-		f = filenew(d);
+		f->qid = qencode(d);
 		free(d);
-		f->fspath = np;
 		f->path = path;
-		filefree(p);
-		return f;
+		f->realpath = realpath;
+		fid->aux = f;
+		fid->qid = f->qid;
+		*nwalk = *nwalk + 1;
+		return nil;
 	}
-	free(np);
-	return nil;
+	return "not found";
 }
 
-char*
-walk1(Fid *fid, char *name, void *)
+void
+fswalk(Req *r)
 {
-	F *p, *f;
-	Fstate *st;
+	int nwalk;
 
-	st = fid->aux;
-	p = st->file;
-	if((f = filewalk(p, name)) == nil)
-		return "not found";
-	st->file = f;
-
-	fid->qid = f->qid;
-	return nil;
-}
-
-char*
-clone(Fid *old, Fid *new, void*)
-{
-	Fstate *fs;
-
-	fs = old->aux;
-	new->aux = fstatenew(fs->file);
-	return nil;
+	nwalk = 1;
+	r->aux = &nwalk;
+	walkandclone(r, walkto, clone, r);
 }
 
 void
 destroyfid(Fid *fid)
 {
 	if(fid->aux)
-		fstatefree(fid->aux);
+		filefree(fid->aux);
 	fid->aux = nil;
-}
-
-void
-fswalk(Req *r)
-{
-	srvrelease(&thefs);
-	walkandclone(r, walk1, clone, nil);
-	srvacquire(&thefs);
-}
-
-Ftab*
-filereaddir(F *p)
-{
-	int fd;
-	long n;
-	Dir *dir, *d;
-	char *path;
-	F *f;
-	Ftab *ft;
-
-	ft = ftnew();
-	for(usize i = 0; i < nbranch; i++){
-		path = mkpath(branch[i].root, p->fspath, nil);
-		if((d = dirstat(path)) == nil){
-		err:
-			free(path);
-			continue;
-		}
-		free(d);
-		if((fd = open(path, OREAD)) < 0)
-			goto err;
-		free(path);
-		while((n = dirread(fd, &dir)) > 0){
-			for(usize j = 0; j < n; j++){
-				if(i > 0 && fthas(ft, dir[j].name))
-					continue;
-				f = filenew(&dir[j]);
-				ftadd(ft, f);
-			}
-			free(dir);
-		}
-		if(n < 0)
-			fprint(2, "dirread: %r\n");
-		close(fd);
-	}
-	return ft;
 }
 
 void
 fsopen(Req *r)
 {
 	Fcall *T, *R;
-	Fstate *st;
-	F *f;
+	FILE *f;
+	usize i;
+	char *path;
+	Dir *d;
 	
 	T = &r->ifcall;
 	R = &r->ofcall;
-	st = r->fid->aux;
-	f = st->file;
+	f = r->fid->aux;
 
 	srvrelease(&thefs);
-	if(f->mode&DMDIR)
-		st->ftab = filereaddir(f);
-	else{
-		if((st->fd = open(f->path, T->mode)) < 0){
-			responderror(r);
-			srvacquire(&thefs);
-			return;
+	if(f->mode & DMDIR){
+		f->mtpt = mtptgrab();
+		for(i = 0; i < nbranch; i++){
+			path = mkpath(branch[i].root, f->path, nil);
+			if((d = dirstat(path)) != nil){
+				if(d->mode & DMDIR)
+				if(bind(path, f->mtpt->path, MAFTER) == -1)
+					sysfatal("bind: %r");
+				free(d);
+			}
+			free(path);
 		}
-		R->iounit = iounit(st->fd);
+		if((f->fd = open(f->mtpt->path, T->mode)) < 0){
+			responderror(r);
+			goto done;
+		}
+	}else{
+		if((f->fd = open(f->realpath, T->mode)) < 0){
+			responderror(r);
+			goto done;
+		}
+	}
+	R->iounit = iounit(f->fd);
+	respond(r, nil);
+done:
+	srvacquire(&thefs);
+}
+
+void
+fsremove(Req *r)
+{
+	FILE *f;
+	
+	f = r->fid->aux;
+	srvrelease(&thefs);
+	if(remove(f->path) < 0){
+		responderror(r);
+		goto done;
 	}
 	respond(r, nil);
+done:
+	srvacquire(&thefs);
+}
+
+int
+dirgen(int i, Dir *d, void *aux)
+{
+	FILE *f = aux;
+	
+	if(i == 0){
+		if(f->dirs){
+			free(f->dirs);
+			f->dirs = nil;
+			f->ndirs = 0;
+		}
+		f->ndirs = dirreadall(f->fd, &f->dirs);
+		if(f->ndirs == -1)
+			sysfatal("dirreadall: %r");
+	}
+	if(f->ndirs == i)
+		return -1;
+	dircopy(d, &f->dirs[i]);
+	d->qid = qencode(d);
+	return 0;
+}
+
+void
+fsread(Req *r)
+{
+	long n;
+	Fcall *T, *R;
+	FILE *f;
+	
+	T = &r->ifcall;
+	R = &r->ofcall;
+	f = r->fid->aux;
+
+	srvrelease(&thefs);
+	if(f->mode&DMDIR){
+		dirread9p(r, dirgen, f);
+	}else{
+		if((n = pread(f->fd, R->data, T->count, T->offset)) < 0){
+			responderror(r);
+			goto done;
+		}
+		r->ofcall.count = n;
+	}
+	respond(r, nil);
+done:
+	srvacquire(&thefs);
+}
+
+void
+fswrite(Req *r)
+{
+	Fcall *T, *R;
+	FILE *f;
+	
+	T = &r->ifcall;
+	R = &r->ofcall;
+	f = r->fid->aux;
+	
+	srvrelease(&thefs);
+	if((R->count = pwrite(f->fd, T->data, T->count, T->offset)) != T->count){
+		responderror(r);
+		goto done;
+	}
+	respond(r, nil);
+done:
 	srvacquire(&thefs);
 }
 
@@ -351,174 +357,76 @@ mkdirp(char *path)
 void
 fscreate(Req *r)
 {
-	char *path, *npath;
+	char *path, *realpath;
 	usize i;
 	Dir *d;
 	Fcall *T, *R;
-	Fstate *st;
-	F *f, *nf;
+	FILE *parent, *f;
+	int fd;
 	
 	T = &r->ifcall;
 	R = &r->ofcall;
-	st = r->fid->aux;
-	f = st->file;
+	parent = r->fid->aux;
 	
 	srvrelease(&thefs);
 	for(i = 0; i < nbranch; i++)
 		if(branch[i].create == 1)
 			break;
-	path = mkpath(branch[i].root, f->fspath, nil);
+	path = mkpath(branch[i].root, parent->path, nil);
 	if(mkdirp(path) < 0){
 		responderror(r);
-		srvacquire(&thefs);
-		return;
+		goto done;
 	}
-	npath = mkpath(path, T->name, nil);
+	realpath = mkpath(path, T->name, nil);
 	free(path);
-	st = emalloc(sizeof(*st));
-	if((st->fd = create(npath, T->mode, T->perm)) < 0){
+	if((fd = create(realpath, T->mode, T->perm)) < 0){
+		free(realpath);
 		responderror(r);
-		srvacquire(&thefs);
-		return;
+		goto done;
 	}
-	if((d = dirfstat(st->fd)) == nil){
-		fstatefree(st);
+	if((d = dirfstat(fd)) == nil){
+		free(realpath);
 		responderror(r);
-		srvacquire(&thefs);
-		return;
+		goto done;
 	}
-	nf = filenew(d);
+	f = filenew();
+	dircopy(f, d);
+	f->fd = fd;
+	f->qid = qencode(d);
+	f->path = mkpath(parent->path, T->name, nil);
+	f->realpath = realpath;
 	free(d);
-	nf->path = npath;
-	nf->fspath = estrdup(f->fspath);
-	st->file = nf;
+	filefree(parent);
 	
-	r->fid->aux = st;
-	r->fid->qid = nf->qid;
-	R->qid = nf->qid;
+	r->fid->aux = f;
+	R->qid = f->qid;
 	respond(r, nil);
+done:
 	srvacquire(&thefs);
 }
 
-void
-fsremove(Req *r)
-{
-	Fstate *st;
-	F *f;
-	
-	st = r->fid->aux;
-	f = st->file;
-	srvrelease(&thefs);
-	if(remove(f->path) < 0){
-		responderror(r);
-		srvacquire(&thefs);
-		return;
-	}
-	respond(r, nil);
-	srvacquire(&thefs);
-}
-
-void
-dirfill(Dir *dir, F *f)
-{
-	*dir = f->Dir;
-	dir->qid = f->qid;
-	dir->name = estrdup(f->name);
-	dir->uid = estrdup(f->uid);
-	dir->gid = estrdup(f->gid);
-	dir->muid = estrdup(f->muid);
-}
-
-int
-dirgen(int i, Dir *dir, void *aux)
-{
-	Fstate *fs;
-	F *f;
-	
-	fs = aux;
-	f = ftidx(fs->ftab, i);
-	if(f == nil)
-		return -1;
-	dirfill(dir, f);
-	return 0;
-}
-
-void
-fsread(Req *r)
-{
-	long n;
-	Fcall *T, *R;
-	F *f;
-	Fstate *st;
-	
-	T = &r->ifcall;
-	R = &r->ofcall;
-	st = r->fid->aux;
-	f = st->file;
-
-	srvrelease(&thefs);
-	if(f->mode&DMDIR){
-		dirread9p(r, dirgen, st);
-		respond(r, nil);
-		srvacquire(&thefs);
-		return;
-	}
-	if((n = pread(st->fd, R->data, T->count, T->offset)) < 0){
-		responderror(r);
-		srvacquire(&thefs);
-		return;
-	}
-	r->ofcall.count = n;
-	respond(r, nil);
-	srvacquire(&thefs);
-}
-
-void
-fswrite(Req *r)
-{
-	Fcall *T, *R;
-	Fstate *fs;
-	
-	T = &r->ifcall;
-	R = &r->ofcall;
-	fs = r->fid->aux;
-	
-	srvrelease(&thefs);
-	if((R->count = pwrite(fs->fd, T->data, T->count, T->offset)) != T->count){
-		responderror(r);
-		srvacquire(&thefs);
-		return;
-	}
-	respond(r, nil);
-	srvacquire(&thefs);
-}
 
 void
 fsstat(Req *r)
 {
-	Fstate *st;
+	FILE *f = r->fid->aux;
 	
-	st = r->fid->aux;
-	dirfill(&r->d, st->file);
+	dircopy(&r->d, f);
 	respond(r, nil);
 }
 
 void
 fswstat(Req *r)
 {
-	Fstate *st;
-	F *f;
-	
-	st = r->fid->aux;
-	f = st->file;
+	FILE *f = r->fid->aux;
 	
 	srvrelease(&thefs);
-	if(dirwstat(f->path, &r->d) < 0){
+	if(dirwstat(f->realpath, &r->d) < 0){
 		responderror(r);
-		srvacquire(&thefs);
-		return;
+		goto done;
 	}
 	respond(r, nil);
+done:
 	srvacquire(&thefs);
 }
 
@@ -539,13 +447,13 @@ void
 main(int argc, char *argv[])
 {
 	int c, i, mflag, stdio;
-	char *mtpt, *srvname, *path, *p;
+	char *mountat, *srvname, *path, *p;
 	Dir *d;
 	Branch *b;
 
 	c = 0;
 	mflag = MREPL|MCREATE;
-	mtpt = nil;
+	mountat = nil;
 	srvname = nil;
 	stdio = 0;
 	ARGBEGIN{
@@ -565,7 +473,7 @@ main(int argc, char *argv[])
 		chatty9p++;
 		break;
 	case 'm':
-		mtpt = EARGF(usage());
+		mountat = EARGF(usage());
 		break;
 	case 's':
 		srvname = EARGF(usage());
@@ -578,8 +486,8 @@ main(int argc, char *argv[])
 	}ARGEND;
 	if(argc < 1)
 		usage();
-	if((mtpt || srvname) == 0)
-		mtpt = "/mnt/union";
+	if((mountat || srvname) == 0)
+		mountat = "/mnt/union";
 	nbranch = argc;
 	branch = b = emalloc(nbranch * sizeof(Branch));
 	for(i = 0; i < argc; i++){
@@ -596,7 +504,7 @@ main(int argc, char *argv[])
 			continue;
 		}
 		free(d);
-		if(mtpt && strcmp(path, mtpt) == 0){
+		if(mountat && strcmp(path, mountat) == 0){
 			p = pivot(path);
 			free(path);
 			path = p;
@@ -620,9 +528,8 @@ main(int argc, char *argv[])
 	thefs.stat = fsstat;
 	thefs.wstat = fswstat;
 	thefs.destroyfid = destroyfid;
-	initroot();
 	if(stdio == 0){
-		postmountsrv(&thefs, srvname, mtpt, mflag);
+		postmountsrv(&thefs, srvname, mountat, mflag);
 		exits(nil);
 	}
 	thefs.infd = 0;
