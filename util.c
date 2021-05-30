@@ -1,7 +1,5 @@
 #include <u.h>
 #include <libc.h>
-#include <thread.h>
-#include "unionfs.h"
 
 void
 usage(void)

@@ -1,5 +1,6 @@
 #include <u.h>
 #include <libc.h>
+#include <String.h>
 #include <fcall.h>
 #include <thread.h>
 #include <9p.h>
@@ -57,8 +58,8 @@ filefree(FILE *f)
 	if(f->uid) free(f->uid);
 	if(f->gid) free(f->gid);
 	if(f->muid) free(f->muid);
-	if(f->path) free(f->path);
-	if(f->realpath) free(f->realpath);
+	if(f->path) s_free(f->path);
+	if(f->realpath) s_free(f->realpath);
 	if(f->fd != -1) close(f->fd);
 	if(f->dirs) free(f->dirs);
 	if(f->mtpt) mtptfree(f->mtpt);
@@ -74,9 +75,17 @@ dircopy(Dir *a, Dir *b)
 	a->mode = b->mode;
 	a->mtime = b->mtime;
 	a->atime = b->atime;
+	if(a->name)
+		free(a->name);
 	a->name = estrdup(b->name);
+	if(a->uid)
+		free(a->uid);
 	a->uid = estrdup(b->uid);
+	if(a->gid)
+		free(a->gid);
 	a->gid = estrdup(b->gid);
+	if(a->muid)
+		free(a->muid);
 	a->muid = estrdup(b->muid);
 }
 
@@ -98,8 +107,8 @@ fsattach(Req *r)
 	f->dev = 0xFFFFFFFFFFFFFFFF;
 	f->qid = (Qid){0, 0, QTDIR};
 	f->qid = qencode(f);
-	f->path = estrdup(f->name);
-	f->realpath = estrdup(f->name);
+	f->path = s_copy(f->name);
+	f->realpath = s_copy(f->name);
 	
 	r->fid->aux = f;
 	r->fid->qid = f->qid;
@@ -107,22 +116,14 @@ fsattach(Req *r)
 	respond(r, nil);
 }
 
-char*
-mkpath(char *a0, ...)
+String*
+walk(String *s, char *n0, char *n1)
 {
-	va_list args;
-	int i;
-	char *a;
-	char *ap[] = {a0, "", ""};
-
-	va_start(args, a0);
-	for(i = 1; (a = va_arg(args, char*)) != nil && i < 3; i++)
-		ap[i] = a;
-	va_end(args);
-	if((a = smprint("%s/%s/%s", ap[0], ap[1], ap[2])) == nil)
-		sysfatal("smprint: %r");
-
-	return cleanname(a);
+	s_putc(s, '/'); s_append(s, n0);
+	s_putc(s, '/'); s_append(s, n1);
+	cleanname(s->base);
+	s->ptr = s->base + strlen(s->base);
+	return s;
 }
 
 char*
@@ -133,45 +134,30 @@ clone(Fid *fid, Fid *newfid, void*)
 	
 	f = filenew();
 	dircopy(f, parent);
-	f->qid = parent->qid;
-	f->path = estrdup(parent->path);
-	f->realpath = estrdup(parent->realpath);
+	f->path = s_clone(parent->path);
+	f->realpath = s_clone(parent->realpath);
 	newfid->aux = f;
 	return nil;
 }
 
 char*
-walkto(Fid *fid, char *name, void *aux)
+walkto(Fid *fid, char *name, void *)
 {
-	Req *r;
 	Dir *d;
 	FILE *f;
-	char *path, *realpath;
-	int i, *nwalk;
+	int i;
 	
-	r = aux;
 	f = fid->aux;
-	nwalk = r->aux;
-	path = mkpath(f->path, name, nil);
+	walk(f->path, name, nil);
 	for(i = 0; i < nbranch; i++){
-		realpath = mkpath(branch[i].root, path, nil);
-		if((d = dirstat(realpath)) == nil)
+		s_reset(f->realpath);
+		walk(f->realpath, branch[i].root, s_to_c(f->path));
+		if((d = dirstat(s_to_c(f->realpath))) == nil)
 			continue;
-		if(*nwalk == r->ifcall.nwname){
-			filefree(f);
-			f = filenew();
-			dircopy(f, d);
-		}else{
-			free(f->path);
-			free(f->realpath);
-		}
+		dircopy(f, d);
 		f->qid = qencode(d);
 		free(d);
-		f->path = path;
-		f->realpath = realpath;
-		fid->aux = f;
 		fid->qid = f->qid;
-		*nwalk = *nwalk + 1;
 		return nil;
 	}
 	return "not found";
@@ -180,10 +166,6 @@ walkto(Fid *fid, char *name, void *aux)
 void
 fswalk(Req *r)
 {
-	int nwalk;
-
-	nwalk = 1;
-	r->aux = &nwalk;
 	walkandclone(r, walkto, clone, r);
 }
 
@@ -201,7 +183,7 @@ fsopen(Req *r)
 	Fcall *T, *R;
 	FILE *f;
 	usize i;
-	char *path;
+	String *path;
 	Dir *d;
 	
 	T = &r->ifcall;
@@ -211,22 +193,24 @@ fsopen(Req *r)
 	srvrelease(&thefs);
 	if(f->mode & DMDIR){
 		f->mtpt = mtptgrab();
+		path = s_new();
 		for(i = 0; i < nbranch; i++){
-			path = mkpath(branch[i].root, f->path, nil);
-			if((d = dirstat(path)) != nil){
+			s_reset(path);
+			walk(path, branch[i].root, s_to_c(f->path));
+			if((d = dirstat(s_to_c(path))) != nil){
 				if(d->mode & DMDIR)
-				if(bind(path, f->mtpt->path, MAFTER) == -1)
+				if(bind(s_to_c(path), f->mtpt->path, MAFTER) == -1)
 					sysfatal("bind: %r");
 				free(d);
 			}
-			free(path);
 		}
+		s_free(path);
 		if((f->fd = open(f->mtpt->path, T->mode)) < 0){
 			responderror(r);
 			goto done;
 		}
 	}else{
-		if((f->fd = open(f->realpath, T->mode)) < 0){
+		if((f->fd = open(s_to_c(f->realpath), T->mode)) < 0){
 			responderror(r);
 			goto done;
 		}
@@ -244,7 +228,7 @@ fsremove(Req *r)
 	
 	f = r->fid->aux;
 	srvrelease(&thefs);
-	if(remove(f->path) < 0){
+	if(remove(s_to_c(f->path)) < 0){
 		responderror(r);
 		goto done;
 	}
@@ -357,7 +341,7 @@ mkdirp(char *path)
 void
 fscreate(Req *r)
 {
-	char *path, *realpath;
+	String *realpath;
 	usize i;
 	Dir *d;
 	Fcall *T, *R;
@@ -372,39 +356,34 @@ fscreate(Req *r)
 	for(i = 0; i < nbranch; i++)
 		if(branch[i].create == 1)
 			break;
-	path = mkpath(branch[i].root, parent->path, nil);
-	if(mkdirp(path) < 0){
+	realpath = s_new();
+	walk(realpath, branch[i].root, s_to_c(parent->path));
+	if(mkdirp(s_to_c(realpath)) < 0){
+error:
+		s_free(realpath);
 		responderror(r);
-		goto done;
+		srvacquire(&thefs);
+		return;
 	}
-	realpath = mkpath(path, T->name, nil);
-	free(path);
-	if((fd = create(realpath, T->mode, T->perm)) < 0){
-		free(realpath);
-		responderror(r);
-		goto done;
-	}
-	if((d = dirfstat(fd)) == nil){
-		free(realpath);
-		responderror(r);
-		goto done;
-	}
+	walk(realpath, T->name, nil);
+	if((fd = create(s_to_c(realpath), T->mode, T->perm)) < 0)
+		goto error;
+	if((d = dirfstat(fd)) == nil)
+		goto error;
 	f = filenew();
 	dircopy(f, d);
 	f->fd = fd;
 	f->qid = qencode(d);
-	f->path = mkpath(parent->path, T->name, nil);
-	f->realpath = realpath;
 	free(d);
+	f->path = walk(s_clone(parent->path), T->name, nil);
+	f->realpath = realpath;
 	filefree(parent);
 	
 	r->fid->aux = f;
 	R->qid = f->qid;
 	respond(r, nil);
-done:
 	srvacquire(&thefs);
 }
-
 
 void
 fsstat(Req *r)
@@ -421,7 +400,7 @@ fswstat(Req *r)
 	FILE *f = r->fid->aux;
 	
 	srvrelease(&thefs);
-	if(dirwstat(f->realpath, &r->d) < 0){
+	if(dirwstat(s_to_c(f->realpath), &r->d) < 0){
 		responderror(r);
 		goto done;
 	}
@@ -447,7 +426,7 @@ void
 main(int argc, char *argv[])
 {
 	int c, i, mflag, stdio;
-	char *mountat, *srvname, *path, *p;
+	char *mountat, *srvname, *path;
 	Dir *d;
 	Branch *b;
 
@@ -497,18 +476,14 @@ main(int argc, char *argv[])
 			continue;
 		}
 
-		path = mkpath(argv[i], nil);
+		path = cleanname(argv[i]);
 		if((d = dirstat(path)) == nil){
 			fprint(2, "%s: %s does not exist, skipping\n", argv0, path);
-			free(path);
 			continue;
 		}
 		free(d);
-		if(mountat && strcmp(path, mountat) == 0){
-			p = pivot(path);
-			free(path);
-			path = p;
-		}
+		if(mountat && strcmp(path, mountat) == 0)
+			path = pivot(path);
 		b->root = path;
 		b->create = c == 1 ? c : 0;
 		b++;

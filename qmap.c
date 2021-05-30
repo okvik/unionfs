@@ -51,8 +51,8 @@
  
 #include <u.h>
 #include <libc.h>
-#include <thread.h>
-#include "unionfs.h"
+
+void *emalloc(ulong);
 
 #define mask(v) ((1ull << v) - 1)
 

@@ -9,8 +9,8 @@ struct Branch {
 
 struct FILE {
 	Dir;
-	char *realpath;
-	char *path;
+	String *realpath;
+	String *path;
 
 	int fd;
 	Mtpt *mtpt;
