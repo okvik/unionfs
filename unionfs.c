@@ -108,7 +108,7 @@ fsattach(Req *r)
 	f->qid = (Qid){0, 0, QTDIR};
 	f->qid = qencode(f);
 	f->path = s_copy(f->name);
-	f->realpath = s_copy(f->name);
+	f->realpath = s_new();
 	
 	r->fid->aux = f;
 	r->fid->qid = f->qid;
@@ -119,8 +119,10 @@ fsattach(Req *r)
 String*
 walk(String *s, char *n0, char *n1)
 {
-	s_putc(s, '/'); s_append(s, n0);
-	s_putc(s, '/'); s_append(s, n1);
+	s_append(s, "/");
+	s_append(s, n0);
+	s_append(s, "/");
+	s_append(s, n1);
 	cleanname(s->base);
 	s->ptr = s->base + strlen(s->base);
 	return s;
