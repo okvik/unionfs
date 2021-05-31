@@ -1,9 +1,3 @@
-#include <u.h>
-#include <libc.h>
-#include <String.h>
-#include <fcall.h>
-#include <thread.h>
-#include <9p.h>
 #include "unionfs.h"
 
 Srv thefs;
@@ -61,7 +55,7 @@ filefree(FILE *f)
 	if(f->path) s_free(f->path);
 	if(f->realpath) s_free(f->realpath);
 	if(f->fd != -1) close(f->fd);
-	if(f->dirs) free(f->dirs);
+	if(f->dl) dirlistfree(f->dl);
 	if(f->mtpt) mtptfree(f->mtpt);
 	free(f);
 }
@@ -242,22 +236,14 @@ done:
 int
 dirgen(int i, Dir *d, void *aux)
 {
-	FILE *f = aux;
+	Dirlist *dl = aux;
+	Dir *dd;
 	
-	if(i == 0){
-		if(f->dirs){
-			free(f->dirs);
-			f->dirs = nil;
-			f->ndirs = 0;
-		}
-		f->ndirs = dirreadall(f->fd, &f->dirs);
-		if(f->ndirs == -1)
-			sysfatal("dirreadall: %r");
-	}
-	if(f->ndirs == i)
+	if(dl->ndirs == i)
 		return -1;
-	dircopy(d, &f->dirs[i]);
-	d->qid = qencode(d);
+	dd = dl->dirs[i];
+	dircopy(d, dd);
+	d->qid = qencode(dd);
 	return 0;
 }
 
@@ -274,16 +260,25 @@ fsread(Req *r)
 
 	srvrelease(&thefs);
 	if(f->mode&DMDIR){
-		dirread9p(r, dirgen, f);
-	}else{
-		if((n = pread(f->fd, R->data, T->count, T->offset)) < 0){
-			responderror(r);
-			goto done;
+		if(T->offset == 0){
+			if(seek(f->fd, 0, 0) == -1)
+				goto error;
+			if(f->dl != nil)
+				dirlistfree(f->dl);
+			if((f->dl = dirlist(f->fd)) == nil)
+				goto error;
 		}
+		dirread9p(r, dirgen, f->dl);
+	}else{
+		if((n = pread(f->fd, R->data, T->count, T->offset)) < 0)
+			goto error;
 		r->ofcall.count = n;
 	}
 	respond(r, nil);
-done:
+	srvacquire(&thefs);
+	return;
+error:
+	responderror(r);
 	srvacquire(&thefs);
 }
 

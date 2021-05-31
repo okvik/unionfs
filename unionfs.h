@@ -1,6 +1,14 @@
+#include <u.h>
+#include <libc.h>
+#include <String.h>
+#include <fcall.h>
+#include <thread.h>
+#include <9p.h>
+
 typedef struct Branch Branch;
 typedef struct FILE FILE;
 typedef struct Mtpt Mtpt;
+typedef struct Dirlist Dirlist;
 
 struct Branch {
 	char *root;
@@ -14,8 +22,7 @@ struct FILE {
 
 	int fd;
 	Mtpt *mtpt;
-	Dir *dirs;
-	long ndirs;
+	Dirlist *dl;
 };
 
 struct Mtpt {
@@ -23,8 +30,20 @@ struct Mtpt {
 	Mtpt *next;
 };
 
+struct Dirlist {
+	Dir *all;
+	long nall;
+	Dir **dirs;
+	long ndirs;
+	
+	/* implementation-specific */
+	char **seen;
+	usize nseen, mseen;
+};
+
 void usage(void);
 Qid qencode(Dir*);
-char *mkpath(char*, ...);
+Dirlist *dirlist(int);
+void dirlistfree(Dirlist*);
 void *emalloc(ulong);
 char *estrdup(char*);

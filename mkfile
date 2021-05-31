@@ -9,6 +9,7 @@ HFILES=\
 OFILES=\
 	util.$O\
 	qmap.$O\
+	dirlist.$O\
 	unionfs.$O
 
 </sys/src/cmd/mkone

@@ -49,10 +49,7 @@
  * almost the entire space just for paths.
  */
  
-#include <u.h>
-#include <libc.h>
-
-void *emalloc(ulong);
+#include "unionfs.h"
 
 #define mask(v) ((1ull << v) - 1)
 
