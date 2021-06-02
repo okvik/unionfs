@@ -224,7 +224,7 @@ fsremove(Req *r)
 	
 	f = r->fid->aux;
 	srvrelease(&thefs);
-	if(remove(s_to_c(f->path)) < 0){
+	if(remove(s_to_c(f->realpath)) < 0){
 		responderror(r);
 		goto done;
 	}
