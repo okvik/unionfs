@@ -200,10 +200,10 @@ fsopen(Req *r)
 			}
 		}
 		s_free(path);
-		if((f->fd = open(f->mtpt->path, T->mode)) < 0)
+		if((f->fd = open(f->mtpt->path, T->mode)) == -1)
 			goto error;
 	}else
-		if((f->fd = open(s_to_c(f->realpath), T->mode)) < 0)
+		if((f->fd = open(s_to_c(f->realpath), T->mode)) == -1)
 			goto error;
 	R->iounit = iounit(f->fd);
 	respond(r, nil);
@@ -221,7 +221,7 @@ fsremove(Req *r)
 	
 	f = r->fid->aux;
 	srvrelease(&thefs);
-	if(remove(s_to_c(f->realpath)) < 0){
+	if(remove(s_to_c(f->realpath)) == -1){
 		responderror(r);
 		goto done;
 	}
@@ -267,7 +267,7 @@ fsread(Req *r)
 		}
 		dirread9p(r, dirgen, f->dl);
 	}else{
-		if((n = pread(f->fd, R->data, T->count, T->offset)) < 0)
+		if((n = pread(f->fd, R->data, T->count, T->offset)) == -1)
 			goto error;
 		r->ofcall.count = n;
 	}
@@ -318,7 +318,7 @@ mkdirp(char *path)
 		if(p = strchr(p, '/'))
 			*p = 0;
 		if((d = dirstat(path)) == nil){
-			if((fd = create(path, 0, 0777|DMDIR)) < 0){
+			if((fd = create(path, 0, 0777|DMDIR)) == -1){
 				free(path);
 				return -1;
 			}
@@ -353,7 +353,7 @@ fscreate(Req *r)
 	fd = -1;
 	realpath = s_new();
 	walk(realpath, branch[i].root, s_to_c(parent->path));
-	if(mkdirp(s_to_c(realpath)) < 0){
+	if(mkdirp(s_to_c(realpath)) == -1){
 error:
 		s_free(realpath);
 		if(fd != -1)
@@ -363,7 +363,7 @@ error:
 		return;
 	}
 	walk(realpath, T->name, nil);
-	if((fd = create(s_to_c(realpath), T->mode, T->perm)) < 0)
+	if((fd = create(s_to_c(realpath), T->mode, T->perm)) == -1)
 		goto error;
 	if((d = dirfstat(fd)) == nil)
 		goto error;
@@ -397,7 +397,7 @@ fswstat(Req *r)
 	FILE *f = r->fid->aux;
 	
 	srvrelease(&thefs);
-	if(dirwstat(s_to_c(f->realpath), &r->d) < 0){
+	if(dirwstat(s_to_c(f->realpath), &r->d) == -1){
 		responderror(r);
 		goto done;
 	}
@@ -414,7 +414,7 @@ pivot(char *p)
 
 	if((q = smprint("/mnt/union.%d.%d", getpid(), n++)) == nil)
 		sysfatal("smprint: %r");
-	if(bind(p, q, MREPL) < 0)
+	if(bind(p, q, MREPL) == -1)
 		sysfatal("bind: %r");
 	return q;
 }
