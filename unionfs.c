@@ -195,25 +195,22 @@ fsopen(Req *r)
 			walk(path, branch[i].root, s_to_c(f->path));
 			if((d = dirstat(s_to_c(path))) != nil){
 				if(d->mode & DMDIR)
-				if(bind(s_to_c(path), f->mtpt->path, MAFTER) == -1)
-					sysfatal("bind: %r");
+					bind(s_to_c(path), f->mtpt->path, MAFTER);
 				free(d);
 			}
 		}
 		s_free(path);
-		if((f->fd = open(f->mtpt->path, T->mode)) < 0){
-			responderror(r);
-			goto done;
-		}
-	}else{
-		if((f->fd = open(s_to_c(f->realpath), T->mode)) < 0){
-			responderror(r);
-			goto done;
-		}
-	}
+		if((f->fd = open(f->mtpt->path, T->mode)) < 0)
+			goto error;
+	}else
+		if((f->fd = open(s_to_c(f->realpath), T->mode)) < 0)
+			goto error;
 	R->iounit = iounit(f->fd);
 	respond(r, nil);
-done:
+	srvacquire(&thefs);
+	return;
+error:
+	responderror(r);
 	srvacquire(&thefs);
 }
 
