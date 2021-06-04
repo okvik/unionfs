@@ -69,6 +69,7 @@ dircopy(Dir *a, Dir *b)
 	a->mode = b->mode;
 	a->mtime = b->mtime;
 	a->atime = b->atime;
+	a->length = b->length;
 	if(a->name)
 		free(a->name);
 	a->name = estrdup(b->name);
