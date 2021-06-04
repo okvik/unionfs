@@ -350,11 +350,14 @@ fscreate(Req *r)
 	for(i = 0; i < nbranch; i++)
 		if(branch[i].create == 1)
 			break;
+	fd = -1;
 	realpath = s_new();
 	walk(realpath, branch[i].root, s_to_c(parent->path));
 	if(mkdirp(s_to_c(realpath)) < 0){
 error:
 		s_free(realpath);
+		if(fd != -1)
+			close(fd);
 		responderror(r);
 		srvacquire(&thefs);
 		return;
