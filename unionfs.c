@@ -15,7 +15,7 @@ mtptgrab(void)
 	qlock(&mtptlock);
 	if(mtpt == nil){
 		mtpt = emalloc(sizeof(Mtpt));
-		mtpt->path = smprint("/mnt/mtpt%d", mtptnext++);
+		mtpt->path = smprint("/mnt/exportfs/%d", mtptnext++);
 	}
 	m = mtpt;
 	mtpt = m->next;
