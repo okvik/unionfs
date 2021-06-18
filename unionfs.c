@@ -56,7 +56,6 @@ filefree(FILE *f)
 	if(f->realpath) s_free(f->realpath);
 	if(f->fd != -1) close(f->fd);
 	if(f->dl) dirlistfree(f->dl);
-	if(f->mtpt) mtptfree(f->mtpt);
 	free(f);
 }
 
@@ -201,7 +200,9 @@ fsopen(Req *r)
 			}
 		}
 		s_free(path);
-		if((f->fd = open(f->mtpt->path, T->mode)) == -1)
+		f->fd = open(f->mtpt->path, T->mode);
+		mtptfree(f->mtpt);
+		if(f->fd == -1)
 			goto error;
 	}else
 		if((f->fd = open(s_to_c(f->realpath), T->mode)) == -1)
