@@ -425,6 +425,7 @@ void
 main(int argc, char *argv[])
 {
 	int c, i, mflag, stdio;
+	char pwd[512];
 	char *mountat, *srvname, *path;
 	Dir *d;
 	Branch *b;
@@ -466,6 +467,8 @@ main(int argc, char *argv[])
 		usage();
 	if((mountat || srvname) == 0)
 		mountat = "/mnt/union";
+	if(getwd(pwd, sizeof pwd) == nil)
+		sysfatal("getwd: %r");
 	nbranch = argc;
 	branch = b = emalloc(nbranch * sizeof(Branch));
 	for(i = 0; i < argc; i++){
@@ -474,8 +477,9 @@ main(int argc, char *argv[])
 			c++;
 			continue;
 		}
-
 		path = cleanname(argv[i]);
+		if(!(path[0] == '/' || path[0] == '#'))
+			path = cleanname(smprint("%s/%s", pwd, path));
 		if((d = dirstat(path)) == nil){
 			fprint(2, "%s: %s does not exist, skipping\n", argv0, path);
 			continue;
