@@ -83,6 +83,16 @@ dircopy(Dir *a, Dir *b)
 	a->muid = estrdup(b->muid);
 }
 
+int
+catchflush(void*, char *note)
+{
+	if(strcmp(note, "flush") == 0){
+		atnotify(catchflush, 0);
+		return 1;
+	}
+	return 0;
+}
+
 void
 fsattach(Req *r)
 {
@@ -186,6 +196,8 @@ fsopen(Req *r)
 	R = &r->ofcall;
 	f = r->fid->aux;
 
+	f->pid = getpid();
+	atnotify(catchflush, 1);
 	srvrelease(&thefs);
 	if(f->mode & DMDIR){
 		f->mtpt = mtptgrab();
@@ -208,12 +220,16 @@ fsopen(Req *r)
 		if((f->fd = open(s_to_c(f->realpath), T->mode)) == -1)
 			goto error;
 	R->iounit = iounit(f->fd);
-	respond(r, nil);
+	if(f->flushed == 0)
+		respond(r, nil);
 	srvacquire(&thefs);
+	atnotify(catchflush, 0);
 	return;
 error:
-	responderror(r);
+	if(f->flushed == 0)
+		responderror(r);
 	srvacquire(&thefs);
+	atnotify(catchflush, 0);
 }
 
 void
@@ -257,6 +273,8 @@ fsread(Req *r)
 	R = &r->ofcall;
 	f = r->fid->aux;
 
+	f->pid = getpid();
+	atnotify(catchflush, 1);
 	srvrelease(&thefs);
 	if(f->mode&DMDIR){
 		if(T->offset == 0){
@@ -273,12 +291,16 @@ fsread(Req *r)
 			goto error;
 		r->ofcall.count = n;
 	}
-	respond(r, nil);
+	if(f->flushed == 0)
+		respond(r, nil);
 	srvacquire(&thefs);
+	atnotify(catchflush, 0);
 	return;
 error:
-	responderror(r);
+	if(f->flushed == 0)
+		responderror(r);
 	srvacquire(&thefs);
+	atnotify(catchflush, 0);
 }
 
 void
@@ -292,13 +314,38 @@ fswrite(Req *r)
 	f = r->fid->aux;
 	
 	srvrelease(&thefs);
+	atnotify(catchflush, 1);
 	if((R->count = pwrite(f->fd, T->data, T->count, T->offset)) != T->count){
-		responderror(r);
+		if(f->flushed == 0)
+			responderror(r);
 		goto done;
 	}
-	respond(r, nil);
+	if(f->flushed == 0)
+		respond(r, nil);
 done:
 	srvacquire(&thefs);
+	atnotify(catchflush, 0);
+}
+
+void
+fsflush(Req *r)
+{
+	FILE *f = r->oldreq->fid->aux;
+	
+	if(f->pid == 0){
+		respond(r, nil);
+		return;
+	}
+	switch(r->oldreq->type){
+	case Topen:
+	case Tread:
+	case Twrite:
+		f->flushed = 1;
+		while(postnote(PNPROC, f->pid, "flush") != 0)
+			sleep(100);
+		respond(r->oldreq, "interrupted");
+	}
+	respond(r, nil);
 }
 
 int
@@ -505,6 +552,7 @@ main(int argc, char *argv[])
 	thefs.write = fswrite;
 	thefs.stat = fsstat;
 	thefs.wstat = fswstat;
+	thefs.flush = fsflush;
 	thefs.destroyfid = destroyfid;
 	if(stdio == 0){
 		postmountsrv(&thefs, srvname, mountat, mflag);

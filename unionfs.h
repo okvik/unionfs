@@ -23,6 +23,9 @@ struct FILE {
 	int fd;
 	Mtpt *mtpt;
 	Dirlist *dl;
+	
+	int pid;
+	int flushed;
 };
 
 struct Mtpt {
