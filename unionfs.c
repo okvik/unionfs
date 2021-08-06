@@ -341,9 +341,10 @@ fsflush(Req *r)
 	case Tread:
 	case Twrite:
 		f->flushed = 1;
-		while(postnote(PNPROC, f->pid, "flush") != 0)
-			sleep(100);
-		respond(r->oldreq, "interrupted");
+		if(postnote(PNPROC, f->pid, "flush") == 0)
+			respond(r->oldreq, "interrupted");
+		else
+			fprint(2, "fsflush: %r");
 	}
 	respond(r, nil);
 }
